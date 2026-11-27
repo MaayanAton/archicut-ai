@@ -49,7 +49,8 @@ export interface BuildingModel {
 /** Is an element of this phase shown in this view state? Projects that are not renovations show everything. */
 export function inState(phase: Phase, state: ViewState, renovation: boolean): boolean {
   if (!renovation) return true;
-  if (state === 'existing') return phase !== 'new';
+  // The demolition plan is the existing state with the parts to be removed marked; new work is not shown in it.
+  if (state === 'existing' || state === 'demolition') return phase !== 'new';
   if (state === 'proposed') return phase !== 'demolish';
   return true;
 }

@@ -76,6 +76,22 @@ describe('building model', () => {
     expect(o.pos).toBeCloseTo(4000, 6);
     expect(ext.walls[3].b).toEqual(v2(w.a.x - 1000, w.a.y)); // the west wall followed
   });
+  it('shows only the existing state in the demolition plan, with new work hidden', () => {
+    const d = house();
+    d.renovation = true;
+    d.walls = d.walls.map((w, i) => ({ ...w, phase: i === 0 ? 'demolish' as const : 'existing' as const }));
+    const added = rectWalls(1000, 1000, 2000, 2000, 100, 'L0', { ...wallBase, kind: 'interior', phase: 'new' }, id);
+    d.walls.push(...added);
+    const ids = (st: 'existing' | 'demolition' | 'proposed' | 'compare') => buildModel(d, st).levels[0].walls.map((x) => x.w.id).sort();
+    const demolished = d.walls[0].id, newIds = added.map((w) => w.id);
+    expect(ids('demolition')).toEqual(ids('existing'));
+    expect(ids('demolition')).toContain(demolished);
+    for (const n of newIds) expect(ids('demolition')).not.toContain(n);
+    expect(ids('proposed')).not.toContain(demolished);
+    for (const n of newIds) expect(ids('proposed')).toContain(n);
+    expect(ids('compare')).toHaveLength(d.walls.length);
+  });
+
   it('reports an unclosed room after deleting a wall', () => {
     const d = house();
     const m = buildModel(deleteIds(d, [d.walls[1].id]));
