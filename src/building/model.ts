@@ -2,7 +2,7 @@
 // the project data in one place. There is no separate decorative model: every view reads these solids.
 
 import { type Vec2, v2 } from '../geometry/vec';
-import { add, closestOnSegment, clipHalfPlane, dist, dot, mul, norm, perpL, polyArea, polylineLength, rotatePt, segmentQuads, sub } from '../site/poly';
+import { add, closestOnSegment, clipHalfPlane, dist, dot, mul, norm, perpL, pointInPoly, polyArea, polylineLength, rotatePt, segmentQuads, sub } from '../site/poly';
 import { flat, type Lin } from '../site/prims';
 import type { BuildingData, Column, FloorFinish, Furniture, Level, Opening, Phase, Room, Slab, ViewState, Wall } from './types';
 import { faceAt, faceNet, graphFaces, grossOutlines, wallGraph, wallOutlines, type Face } from './geom';
@@ -243,7 +243,7 @@ export function buildModel(d: BuildingData, state: ViewState = 'proposed'): Buil
       const net = roomNet(room, faces);
       if (!net) { warnings.push({ id: room.id, msg: `החדר "${room.name}" אינו סגור בקירות. סגרי את הקירות סביבו או שרטטי את גבולו ידנית.` }); rms.push({ room, net: null, area: 0, perimeter: 0, center: room.seed }); continue; }
       const area = polyArea(net);
-      const center = room.mode === 'auto' ? room.seed : centroidOf(net);
+      const center = labelPoint(net);
       rms.push({ room, net, area, perimeter: polylineLength(net, true), center });
       solids.push({ id: room.id, type: 'room', levelId: L, phase: 'existing', prims: [{ t: 'prism', poly: net, z0: flat(z), z1: flat(z + 6), color: room.floor.color, role: 'finish', floor: room.floor }] });
     }
@@ -313,6 +313,26 @@ export function buildModel(d: BuildingData, state: ViewState = 'proposed'): Buil
   const m: BuildingModel = { levels: levelModels, solids, warnings, state };
   cache = { d, state, m };
   return m;
+}
+
+/** A point well inside a polygon for its label: the centroid when it is inside, else the middle of the widest horizontal run. */
+export function labelPoint(pts: Vec2[]): Vec2 {
+  const c = centroidOf(pts);
+  if (pointInPoly(c, pts)) return c;
+  let best: Vec2 | null = null, bestW = -1;
+  const ys = pts.map((p) => p.y);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  for (let i = 1; i < 12; i++) {
+    const y = y0 + ((y1 - y0) * i) / 12;
+    const xs: number[] = [];
+    for (let j = 0; j < pts.length; j++) {
+      const a = pts[j], b = pts[(j + 1) % pts.length];
+      if ((a.y > y) !== (b.y > y)) xs.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
+    }
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) if (xs[k + 1] - xs[k] > bestW) { bestW = xs[k + 1] - xs[k]; best = v2((xs[k] + xs[k + 1]) / 2, y); }
+  }
+  return best ?? c;
 }
 
 function centroidOf(pts: Vec2[]): Vec2 {

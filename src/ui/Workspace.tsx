@@ -8,6 +8,7 @@ import { ProjectionsView } from './projections/ProjectionsView';
 import { SectionView } from './section/SectionView';
 import { DrawingView } from './drawing/DrawingView';
 import { SiteView } from './site/SiteView';
+import { BuildingView } from './building/BuildingView';
 
 export function Workspace({ id }: { id: string }) {
   const project = useStore((s) => s.projects.find((p) => p.id === id));
@@ -63,6 +64,7 @@ export function Workspace({ id }: { id: string }) {
       {project.type === 'section' && <SectionView project={project} />}
       {project.type === 'drawing' && <DrawingView project={project} />}
       {project.type === 'site' && <SiteView project={project} />}
+      {project.type === 'building' && <BuildingView project={project} />}
       {renaming && <RenameDialog project={project} onClose={() => setRenaming(false)} />}
     </>
   );

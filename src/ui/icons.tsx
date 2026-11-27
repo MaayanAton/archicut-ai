@@ -7,6 +7,17 @@ const S = ({ children }: { children: ReactNode }) => (
 );
 
 export const Icons = {
+  house: <S><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /><rect x="10" y="14" width="4" height="6" /></S>,
+  wall: <S><path d="M3 6h18v4H3zM3 14h18v4H3z" /><path d="M9 6v4M15 10v4M9 14v4" /></S>,
+  door: <S><path d="M4 20h16" /><path d="M7 20V5h7v15" /><path d="M14 5a9 9 0 0 1 6 8" strokeDasharray="2 2" /><circle cx="12" cy="13" r=".6" /></S>,
+  window: <S><rect x="4" y="5" width="16" height="14" rx="1" /><path d="M12 5v14M4 12h16" /></S>,
+  stairs: <S><path d="M3 20h4v-4h4v-4h4V8h4V4h2" /></S>,
+  sofa: <S><path d="M4 11V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3" /><path d="M2 12a2 2 0 0 1 4 0v2h12v-2a2 2 0 0 1 4 0v5H2z" /><path d="M5 17v2M19 17v2" /></S>,
+  column: <S><rect x="8" y="3" width="8" height="18" /><path d="M6 3h12M6 21h12" /></S>,
+  roof: <S><path d="M2 13l10-8 10 8" /><path d="M5 11v8h14v-8" /></S>,
+  room: <S><rect x="4" y="4" width="16" height="16" /><path d="M8 12h8" /></S>,
+  slab: <S><path d="M3 10l9-4 9 4-9 4z" /><path d="M3 10v3l9 4 9-4v-3" /></S>,
+  table: <S><rect x="3" y="4" width="18" height="16" rx="1" /><path d="M3 9h18M3 14h18M9 4v16" /></S>,
   upload: <S><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></S>,
   plus: <S><path d="M12 5v14M5 12h14" /></S>,
   folder: <S><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></S>,

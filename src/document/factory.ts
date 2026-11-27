@@ -2,6 +2,7 @@ import { defaultEpureSettings, type SpacePoint } from '../geometry/projection';
 import type { SolidParams } from '../geometry/solids';
 import { emptySite } from '../site/migrate';
 import { DEMO_PARK_NAME, demoParkData } from '../site/demo';
+import { emptyBuilding } from '../building/migrate';
 import type { DrawingData, DrawingElement, PrintSettings, Project, ProjectType, TitleBlock } from './types';
 
 export const uid = () =>
@@ -40,6 +41,7 @@ export function newProject(type: ProjectType, name: string): Project {
   if (type === 'section')
     return { ...base, type, data: { solid: emptySolid('cube'), plane: { orientation: 'horizontal', tilt: 0, azimuth: 0, offset: 0 } } };
   if (type === 'site') return { ...base, type, print: { ...defaultPrint(200), orientation: 'landscape' }, data: emptySite() };
+  if (type === 'building') return { ...base, type, print: { ...defaultPrint(100), orientation: 'landscape', blackWhite: false }, data: emptyBuilding(uid()) };
   return { ...base, type, data: emptyDrawing() };
 }
 

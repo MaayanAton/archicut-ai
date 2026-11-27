@@ -6,17 +6,22 @@ import type { PlaneControls } from '../geometry/section';
 import type { SolidParams } from '../geometry/solids';
 import type { Vec2 } from '../geometry/vec';
 import type { SiteData } from '../site/types';
+import type { BuildingData } from '../building/types';
 
-/** Version 2 added site projects. Files without site projects are still written as version 1. */
-export const FILE_VERSION = 2;
+/**
+ * Version 2 added site projects, version 3 building projects. A file is written with the lowest
+ * version that holds its projects, so older versions of the app can still open what they understand.
+ */
+export const FILE_VERSION = 3;
 
-export type ProjectType = 'projections' | 'section' | 'drawing' | 'site';
+export type ProjectType = 'projections' | 'section' | 'drawing' | 'site' | 'building';
 
 export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   projections: 'הנדסה תיאורית והיטלים',
   section: 'גוף וחתך',
   drawing: 'שרטוט',
   site: 'תכנון אדריכלי ומתחמים',
+  building: 'תכנון מבנים ועיצוב פנים',
 };
 
 export interface TitleBlock {
@@ -124,7 +129,8 @@ export type Project =
   | (ProjectBase & { type: 'projections'; data: ProjectionsData })
   | (ProjectBase & { type: 'section'; data: SectionData })
   | (ProjectBase & { type: 'drawing'; data: DrawingData })
-  | (ProjectBase & { type: 'site'; data: SiteData });
+  | (ProjectBase & { type: 'site'; data: SiteData })
+  | (ProjectBase & { type: 'building'; data: BuildingData });
 
 export type ProjectData = Project['data'];
 
