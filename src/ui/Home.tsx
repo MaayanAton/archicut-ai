@@ -38,6 +38,7 @@ const TYPE_CHOICES: { type: ProjectType; icon: keyof typeof Icons; desc: string 
   { type: 'section', icon: 'section', desc: 'קובייה, תיבה, גליל, חרוט, פירמידה או מנסרה, ומישור חיתוך במידות מדויקות' },
   { type: 'drawing', icon: 'pencil', desc: 'שרטוט דו-ממדי עם קווים, צורות, טקסט וקווי מידות' },
   { type: 'site', icon: 'tree', desc: 'מגרש, שבילים, צמחייה, ריהוט ומבנים, טופוגרפיה, מודל תלת־ממדי, חתכים וגיליונות הגשה' },
+  { type: 'building', icon: 'house', desc: 'בית חדש מאפס או שיפוץ של תוכנית קיימת: קירות, חדרים ושטחים, דלתות וחלונות, קומות, מדרגות, גגות, ריהוט וחומרים, טבלאות' },
 ];
 
 export function Home() {
@@ -131,7 +132,7 @@ export function Home() {
             </button>
             <button className="action-card" onClick={() => setNewOpen(true)}>
               <div className="ic">{Icons.plus}</div>
-              <div><strong>שרטוט חדש</strong><span>היטלים, גוף וחתך, שרטוט חופשי או תכנון מתחם</span></div>
+              <div><strong>שרטוט חדש</strong><span>היטלים, גוף וחתך, שרטוט חופשי, תכנון מתחם או תכנון מבנה ועיצוב פנים</span></div>
             </button>
             <button className="action-card" onClick={() => setOpenOpen(true)}>
               <div className="ic">{Icons.folder}</div>

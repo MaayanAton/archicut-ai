@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import type { Project, ProjectType } from './types';
-import { demoParkProject, demoProjects, newProject, uid } from './factory';
+import { demoBuildingProjects, demoParkProject, demoProjects, newProject, uid } from './factory';
 import * as storage from '../storage/storage';
 
 const HISTORY_LIMIT = 150;
@@ -101,11 +101,22 @@ export const useStore = create<State>((set, get) => {
           await storage.setMeta('seeded', true);
           projects = await storage.loadAllProjects();
           await storage.setMeta('seeded-site-demo', true);
-        } else if (!(await storage.getMeta('seeded-site-demo'))) {
-          // Version 2.0 adds a site-planning demo. Existing users get it once; deleting it is final.
-          await storage.saveProject(demoParkProject());
-          await storage.setMeta('seeded-site-demo', true);
-          projects = await storage.loadAllProjects();
+          await storage.setMeta('seeded-building-demos', true);
+        } else {
+          let added = false;
+          if (!(await storage.getMeta('seeded-site-demo'))) {
+            // Version 2.0 adds a site-planning demo. Existing users get it once; deleting it is final.
+            await storage.saveProject(demoParkProject());
+            await storage.setMeta('seeded-site-demo', true);
+            added = true;
+          }
+          if (!(await storage.getMeta('seeded-building-demos'))) {
+            // Version 3.0 adds three building demos, once, in the same way.
+            for (const p of demoBuildingProjects()) await storage.saveProject(p);
+            await storage.setMeta('seeded-building-demos', true);
+            added = true;
+          }
+          if (added) projects = await storage.loadAllProjects();
         }
         set({ projects, loaded: true });
       } catch (e) {

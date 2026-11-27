@@ -4,6 +4,7 @@
 import { createStore, del, entries, get, set } from 'idb-keyval';
 import { FILE_VERSION, type Project, type ProjectFile } from '../document/types';
 import { migrateSite, SiteDataError } from '../site/migrate';
+import { BuildingDataError, migrateBuilding } from '../building/migrate';
 
 let store: ReturnType<typeof createStore> | null = null;
 const db = () => (store ??= createStore('archicut-ai', 'projects'));
@@ -29,28 +30,34 @@ export function isProject(x: unknown): x is Project {
   const p = x as Record<string, unknown>;
   return (
     typeof p.id === 'string' && typeof p.name === 'string' &&
-    (p.type === 'projections' || p.type === 'section' || p.type === 'drawing' || p.type === 'site') &&
+    (p.type === 'projections' || p.type === 'section' || p.type === 'drawing' || p.type === 'site' || p.type === 'building') &&
     !!p.data && typeof p.data === 'object' && !!p.titleBlock && !!p.print
   );
 }
 
 export function makeProjectFile(projects: Project[]): ProjectFile {
-  // Files without site projects stay at version 1, so the previous version of the app can still open them.
-  const version = projects.some((p) => p.type === 'site') ? FILE_VERSION : 1;
+  // A file gets the lowest version that holds its projects, so older versions of the app can still open it:
+  // 1 = v1.0 types only, 2 = with site projects (v2.0), 3 = with building projects (v3.0).
+  const version = projects.some((p) => p.type === 'building') ? FILE_VERSION : projects.some((p) => p.type === 'site') ? 2 : 1;
   return { app: 'ArchiCut AI', version, exportedAt: new Date().toISOString(), projects };
 }
 
 /** Brings a stored or imported project up to date. Returns null for data that cannot be used. */
 export function migrateProject(p: Project): Project | null {
-  if (p.type !== 'site') return p;
   try {
-    const { data } = migrateSite(p.data);
-    return { ...p, data };
+    if (p.type === 'site') return { ...p, data: migrateSite(p.data).data };
+    if (p.type === 'building') return { ...p, data: migrateBuilding(p.data, newId).data };
+    return p;
   } catch (e) {
-    if (e instanceof SiteDataError) return null;
+    if (e instanceof SiteDataError || e instanceof BuildingDataError) return null;
     throw e;
   }
 }
+
+const newId = () =>
+  (globalThis.crypto && 'randomUUID' in globalThis.crypto)
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export class ImportError extends Error {}
 

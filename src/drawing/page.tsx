@@ -12,6 +12,8 @@ import { drawingWorldBox, renderBackground, renderElements } from './drawingRend
 import { buildSiteModel } from '../site/section';
 import { contours } from '../site/terrain';
 import { renderSitePlan, sitePlanBox } from '../site/render/plan';
+import { buildModel, sortedLevels } from '../building/model';
+import { levelBox, renderBuildingPlan } from '../building/render/plan';
 import { boxH, boxValid, boxW, padBox, type Box, type ViewCtx } from './viewport';
 
 export const PAPER_MM: Record<Paper, { w: number; h: number }> = { A4: { w: 210, h: 297 }, A3: { w: 297, h: 420 }, A2: { w: 420, h: 594 }, A1: { w: 594, h: 841 } };
@@ -71,6 +73,21 @@ export function projectParts(p: Project, s: PrintSettings): { parts: Part[]; not
     return {
       parts: [{ box: padBox(box, Math.max(boxW(box), boxH(box)) * 0.04), render: (ctx) => renderSitePlan(d, model, ctx, { contours: cont, showPoints: d.terrain.showPoints, showSections: true }), caption: 'תוכנית המתחם' }],
       note: p.demo ? 'פרויקט הדגמה – נתונים לדוגמה בלבד' : undefined,
+    };
+  }
+  if (p.type === 'building') {
+    const d = p.data;
+    const state = 'proposed' as const;
+    const model = buildModel(d, state);
+    // The main floor: the lowest level at or above ground that has content (else any level with content).
+    const levels = sortedLevels(d);
+    const withContent = levels.filter((l) => boxValid(levelBox(d, model, l.id)));
+    const lv = withContent.find((l) => l.elevation >= -1) ?? withContent[0];
+    if (!lv) return { parts: [], empty: 'התוכנית ריקה.' };
+    const box = levelBox(d, model, lv.id);
+    return {
+      parts: [{ box: padBox(box, Math.max(boxW(box), boxH(box)) * 0.05), render: (ctx) => renderBuildingPlan(d, model, lv.id, ctx, { state, furniture: true, labels: true, dims: true }), caption: `תוכנית ${lv.name}` }],
+      note: p.demo ? 'פרויקט הדגמה לימודי – אינו תוכנית מאושרת' : undefined,
     };
   }
   const d = p.data;
