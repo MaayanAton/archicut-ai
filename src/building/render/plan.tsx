@@ -245,8 +245,12 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
   // Room names and areas.
   if (o.labels !== false) for (const r of lm.rooms) {
     if (!r.net) { nodes.push(<Txt key={`rl${r.room.id}`} p={r.center} ctx={ctx} size={2.2} color={RED}>{`${r.room.name} – לא סגור`}</Txt>); continue; }
-    nodes.push(<Txt key={`rl${r.room.id}`} p={r.center} ctx={ctx} size={2.6} bold color={sel.has(r.room.id) ? SEL : '#1f2328'}>{r.room.name}</Txt>);
-    if (r.room.showArea) nodes.push(<Txt key={`ra${r.room.id}`} p={v2(r.center.x, r.center.y - 3.6 * ctx.pu / ctx.k)} ctx={ctx} size={2.1} color="#3d4248">{fmtArea(r.area)}</Txt>);
+    // Labels shrink to fit narrow rooms (down to a readable minimum), so neighbouring names do not run together.
+    const xs = r.net.map((q) => q.x);
+    const roomW = ((Math.max(...xs) - Math.min(...xs)) * ctx.k) / ctx.pu - 1.5;
+    const f = Math.max(0.5, Math.min(1, roomW / Math.max(r.room.name.length * 2.6 * 0.56, fmtArea(r.area).length * 2.1 * 0.55)));
+    nodes.push(<Txt key={`rl${r.room.id}`} p={r.center} ctx={ctx} size={2.6 * f} bold color={sel.has(r.room.id) ? SEL : '#1f2328'}>{r.room.name}</Txt>);
+    if (r.room.showArea) nodes.push(<Txt key={`ra${r.room.id}`} p={v2(r.center.x, r.center.y - (3.6 * f * ctx.pu) / ctx.k)} ctx={ctx} size={2.1 * f} color="#3d4248">{fmtArea(r.area)}</Txt>);
   }
 
   // Annotations.
