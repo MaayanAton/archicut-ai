@@ -5,15 +5,18 @@ import type { AxonometricSettings, EpureSettings, SpacePoint } from '../geometry
 import type { PlaneControls } from '../geometry/section';
 import type { SolidParams } from '../geometry/solids';
 import type { Vec2 } from '../geometry/vec';
+import type { SiteData } from '../site/types';
 
-export const FILE_VERSION = 1;
+/** Version 2 added site projects. Files without site projects are still written as version 1. */
+export const FILE_VERSION = 2;
 
-export type ProjectType = 'projections' | 'section' | 'drawing';
+export type ProjectType = 'projections' | 'section' | 'drawing' | 'site';
 
 export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   projections: 'הנדסה תיאורית והיטלים',
   section: 'גוף וחתך',
   drawing: 'שרטוט',
+  site: 'תכנון אדריכלי ומתחמים',
 };
 
 export interface TitleBlock {
@@ -27,7 +30,7 @@ export interface TitleBlock {
   sheetNo: string;
 }
 
-export type Paper = 'A4' | 'A3';
+export type Paper = 'A4' | 'A3' | 'A2' | 'A1';
 
 export interface PrintSettings {
   paper: Paper;
@@ -120,7 +123,8 @@ interface ProjectBase {
 export type Project =
   | (ProjectBase & { type: 'projections'; data: ProjectionsData })
   | (ProjectBase & { type: 'section'; data: SectionData })
-  | (ProjectBase & { type: 'drawing'; data: DrawingData });
+  | (ProjectBase & { type: 'drawing'; data: DrawingData })
+  | (ProjectBase & { type: 'site'; data: SiteData });
 
 export type ProjectData = Project['data'];
 

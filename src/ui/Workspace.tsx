@@ -7,6 +7,7 @@ import { RenameDialog } from './Home';
 import { ProjectionsView } from './projections/ProjectionsView';
 import { SectionView } from './section/SectionView';
 import { DrawingView } from './drawing/DrawingView';
+import { SiteView } from './site/SiteView';
 
 export function Workspace({ id }: { id: string }) {
   const project = useStore((s) => s.projects.find((p) => p.id === id));
@@ -56,11 +57,12 @@ export function Workspace({ id }: { id: string }) {
         <button className="btn ghost icon" aria-label="ביטול פעולה" title="ביטול (Ctrl+Z)" disabled={!undoable} onClick={() => useStore.getState().undo(id)}>{Icons.undo}</button>
         <button className="btn ghost icon" aria-label="שחזור פעולה" title="שחזור (Ctrl+Y)" disabled={!redoable} onClick={() => useStore.getState().redo(id)}>{Icons.redo}</button>
         <button className="btn ghost icon" aria-label="שמירת קובץ פרויקט לגיבוי" title="שמירת קובץ פרויקט לגיבוי" onClick={() => exportProjectsToFile([project], project.name)}>{Icons.download}</button>
-        <button className="btn primary" onClick={() => navigate({ name: 'print', id })}>{Icons.print}<span className="hide-mobile">הדפסה וייצוא</span></button>
+        <button className="btn primary" onClick={() => navigate({ name: 'print', id })}>{Icons.print}<span className="hide-mobile">{project.type === 'site' ? 'הדפסת תוכנית' : 'הדפסה וייצוא'}</span></button>
       </header>
       {project.type === 'projections' && <ProjectionsView project={project} />}
       {project.type === 'section' && <SectionView project={project} />}
       {project.type === 'drawing' && <DrawingView project={project} />}
+      {project.type === 'site' && <SiteView project={project} />}
       {renaming && <RenameDialog project={project} onClose={() => setRenaming(false)} />}
     </>
   );

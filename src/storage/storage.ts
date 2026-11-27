@@ -3,13 +3,14 @@
 
 import { createStore, del, entries, get, set } from 'idb-keyval';
 import { FILE_VERSION, type Project, type ProjectFile } from '../document/types';
+import { migrateSite, SiteDataError } from '../site/migrate';
 
 let store: ReturnType<typeof createStore> | null = null;
 const db = () => (store ??= createStore('archicut-ai', 'projects'));
 
 export async function loadAllProjects(): Promise<Project[]> {
   const all = await entries<string, Project>(db());
-  return all.map(([, p]) => p).filter(isProject).sort((a, b) => b.updatedAt - a.updatedAt);
+  return all.map(([, p]) => p).filter(isProject).map(migrateProject).filter((p): p is Project => !!p).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export const loadProject = (id: string) => get<Project>(id, db());
@@ -28,13 +29,27 @@ export function isProject(x: unknown): x is Project {
   const p = x as Record<string, unknown>;
   return (
     typeof p.id === 'string' && typeof p.name === 'string' &&
-    (p.type === 'projections' || p.type === 'section' || p.type === 'drawing') &&
+    (p.type === 'projections' || p.type === 'section' || p.type === 'drawing' || p.type === 'site') &&
     !!p.data && typeof p.data === 'object' && !!p.titleBlock && !!p.print
   );
 }
 
 export function makeProjectFile(projects: Project[]): ProjectFile {
-  return { app: 'ArchiCut AI', version: FILE_VERSION, exportedAt: new Date().toISOString(), projects };
+  // Files without site projects stay at version 1, so the previous version of the app can still open them.
+  const version = projects.some((p) => p.type === 'site') ? FILE_VERSION : 1;
+  return { app: 'ArchiCut AI', version, exportedAt: new Date().toISOString(), projects };
+}
+
+/** Brings a stored or imported project up to date. Returns null for data that cannot be used. */
+export function migrateProject(p: Project): Project | null {
+  if (p.type !== 'site') return p;
+  try {
+    const { data } = migrateSite(p.data);
+    return { ...p, data };
+  } catch (e) {
+    if (e instanceof SiteDataError) return null;
+    throw e;
+  }
 }
 
 export class ImportError extends Error {}
@@ -52,7 +67,13 @@ export function parseProjectFile(text: string): Project[] {
     throw new ImportError('הקובץ אינו קובץ פרויקט של ArchiCut AI.');
   if (typeof f.version !== 'number' || f.version > FILE_VERSION)
     throw new ImportError('הקובץ נוצר בגרסה חדשה יותר של האפליקציה ואי אפשר לפתוח אותו כאן.');
-  const valid = f.projects.filter(isProject);
+  let newer = false;
+  const valid = f.projects.filter(isProject).map((p) => {
+    const m = migrateProject(p);
+    if (!m) newer = true;
+    return m;
+  }).filter((p): p is Project => !!p);
+  if (!valid.length && newer) throw new ImportError('הפרויקט בקובץ נוצר בגרסה חדשה יותר של האפליקציה ואי אפשר לפתוח אותו כאן.');
   if (!valid.length) throw new ImportError('לא נמצאו פרויקטים תקינים בקובץ.');
   return valid;
 }

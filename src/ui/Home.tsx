@@ -37,6 +37,7 @@ const TYPE_CHOICES: { type: ProjectType; icon: keyof typeof Icons; desc: string 
   { type: 'projections', icon: 'axes', desc: 'נקודות במרחב, היטלים על π1, π2, π3, תצוגה אקסונומטרית ומערכת פרוסה' },
   { type: 'section', icon: 'section', desc: 'קובייה, תיבה, גליל, חרוט, פירמידה או מנסרה, ומישור חיתוך במידות מדויקות' },
   { type: 'drawing', icon: 'pencil', desc: 'שרטוט דו-ממדי עם קווים, צורות, טקסט וקווי מידות' },
+  { type: 'site', icon: 'tree', desc: 'מגרש, שבילים, צמחייה, ריהוט ומבנים, טופוגרפיה, מודל תלת־ממדי, חתכים וגיליונות הגשה' },
 ];
 
 export function Home() {
@@ -130,7 +131,7 @@ export function Home() {
             </button>
             <button className="action-card" onClick={() => setNewOpen(true)}>
               <div className="ic">{Icons.plus}</div>
-              <div><strong>שרטוט חדש</strong><span>היטלים, גוף וחתך, או שרטוט חופשי</span></div>
+              <div><strong>שרטוט חדש</strong><span>היטלים, גוף וחתך, שרטוט חופשי או תכנון מתחם</span></div>
             </button>
             <button className="action-card" onClick={() => setOpenOpen(true)}>
               <div className="ic">{Icons.folder}</div>

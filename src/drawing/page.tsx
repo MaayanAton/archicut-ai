@@ -9,9 +9,12 @@ import { axoWorldBox, epureWorldBox, renderAxonometric, renderEpure } from './pr
 import { renderSection, sectionWorldBox } from './sectionRender';
 import { computeSection } from './sectionCompute';
 import { drawingWorldBox, renderBackground, renderElements } from './drawingRender';
+import { buildSiteModel } from '../site/section';
+import { contours } from '../site/terrain';
+import { renderSitePlan, sitePlanBox } from '../site/render/plan';
 import { boxH, boxValid, boxW, padBox, type Box, type ViewCtx } from './viewport';
 
-export const PAPER_MM: Record<Paper, { w: number; h: number }> = { A4: { w: 210, h: 297 }, A3: { w: 297, h: 420 } };
+export const PAPER_MM: Record<Paper, { w: number; h: number }> = { A4: { w: 210, h: 297 }, A3: { w: 297, h: 420 }, A2: { w: 420, h: 594 }, A1: { w: 594, h: 841 } };
 
 export const SCALES = [0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500];
 export const scaleLabel = (s: number) => (s < 1 ? `${fmt(1 / s, 2)}:1` : `1:${fmt(s, 4)}`);
@@ -58,6 +61,17 @@ export function projectParts(p: Project, s: PrintSettings): { parts: Part[]; not
     let caption = `חתך ב${SOLID_LABELS[sd.kind]} (${dims} מ״מ). מישור ${ORIENTATION_LABELS[pl.orientation].split(' ')[0]}, הטיה ${fmt(pl.tilt, 2)}°, מיקום ${fmt(pl.offset, 2)} מ״מ.`;
     if (comp.measures) caption += ` שטח ${comp.measures.exact ? '' : '≈'}${fmt(comp.measures.area, comp.measures.exact ? 1 : 0)} מ״מ².`;
     return { parts: [{ box: padBox(sectionWorldBox(r), 12), render: (ctx) => renderSection(r, ctx, { curved: comp.curved }), caption }] };
+  }
+  if (p.type === 'site') {
+    const d = p.data;
+    const model = buildSiteModel(d);
+    const box = sitePlanBox(d, model, false);
+    if (!boxValid(box)) return { parts: [], empty: 'התוכנית ריקה.' };
+    const cont = d.terrain.showContours ? contours(model.terrain, d.terrain.contourStep) : null;
+    return {
+      parts: [{ box: padBox(box, Math.max(boxW(box), boxH(box)) * 0.04), render: (ctx) => renderSitePlan(d, model, ctx, { contours: cont, showPoints: d.terrain.showPoints, showSections: true }), caption: 'תוכנית המתחם' }],
+      note: p.demo ? 'פרויקט הדגמה – נתונים לדוגמה בלבד' : undefined,
+    };
   }
   const d = p.data;
   // The image is printed only under an overlay drawing; side by side, the drawing is independent of it.
@@ -117,7 +131,7 @@ export function suggestScale(parts: Part[], s: PrintSettings): number | null {
   return null;
 }
 
-function HText({ x, y, size, children, anchor = 'right', bold = false, fill = '#000' }: { x: number; y: number; size: number; children: ReactNode; anchor?: 'right' | 'left' | 'center'; bold?: boolean; fill?: string }) {
+export function HText({ x, y, size, children, anchor = 'right', bold = false, fill = '#000' }: { x: number; y: number; size: number; children: ReactNode; anchor?: 'right' | 'left' | 'center'; bold?: boolean; fill?: string }) {
   return (
     <text x={x} y={y} fontSize={size} fill={fill} direction="rtl" textAnchor={anchor === 'right' ? 'start' : anchor === 'left' ? 'end' : 'middle'}
       fontFamily="Rubik, Arial, sans-serif" fontWeight={bold ? 700 : 400}>{children}</text>
@@ -163,7 +177,7 @@ function TitleBlockSvg({ tb, s, w, h }: { tb: TitleBlock; s: PrintSettings; w: n
   );
 }
 
-function CalibrationRuler({ x, y }: { x: number; y: number }) {
+export function CalibrationRuler({ x, y }: { x: number; y: number }) {
   // Horizontal 100 mm with ticks every 5 mm, and a short 10 mm vertical leg to check the other axis.
   const t: ReactNode[] = [];
   for (let i = 0; i <= 100; i += 5) t.push(<line key={`h${i}`} x1={x + i} y1={y} x2={x + i} y2={y - (i % 10 === 0 ? 2.5 : 1.5)} stroke="#000" strokeWidth={0.2} />);
