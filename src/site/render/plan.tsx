@@ -2,7 +2,7 @@
 // Furniture and built objects are drawn as the top view of their actual solids, so the plan always shows
 // the real parametric geometry (stairs show their treads, pergolas their beams).
 
-import type { ReactNode } from 'react';
+import { cloneElement, type ReactElement, type ReactNode, type SVGProps } from 'react';
 import { type Vec2, v2 } from '../../geometry/vec';
 import { Dimension } from '../../drawing/dimension';
 import { addPt, emptyBox, type Box, type ViewCtx } from '../../drawing/viewport';
@@ -42,11 +42,17 @@ const pathD = (pts: Vec2[], ctx: ViewCtx, closed: boolean) => {
 
 function Txt({ p, ctx, size, children, color = '#222', bold = false, anchor = 'middle', bg = false }: { p: Vec2; ctx: ViewCtx; size: number; children: ReactNode; color?: string; bold?: boolean; anchor?: 'middle' | 'start' | 'end'; bg?: boolean }) {
   const q = ctx.T(p);
-  return (
-    <text x={q.x} y={q.y} fontSize={size * ctx.pu} fill={color} textAnchor={anchor} dominantBaseline="middle" direction="rtl"
-      fontFamily="Rubik, Arial, sans-serif" fontWeight={bold ? 700 : 400} style={{ pointerEvents: 'none' }}
-      {...(bg ? { stroke: '#fff', strokeWidth: size * ctx.pu * 0.28, paintOrder: 'stroke' } : {})}>{children}</text>
-  );
+  const props = { x: q.x, y: q.y, fontSize: size * ctx.pu, textAnchor: anchor, dominantBaseline: 'middle', direction: 'rtl', fontFamily: 'Rubik, Arial, sans-serif', fontWeight: bold ? 700 : 400, style: { pointerEvents: 'none' } } as const;
+  const t = <text {...props} fill={color}>{children}</text>;
+  return bg ? <Halo width={size * ctx.pu * 0.28} text={t} /> : t;
+}
+
+/**
+ * White outline behind a text, so it reads over the drawing. Drawn as a separate text under the real one
+ * (not with paint-order), because the PDF export does not support paint-order.
+ */
+export function Halo({ text, width }: { text: ReactElement<SVGProps<SVGTextElement>>; width: number }) {
+  return <g>{cloneElement(text, { fill: '#fff', stroke: '#fff', strokeWidth: width, strokeLinejoin: 'round' })}{text}</g>;
 }
 
 /** Top view of an element's solids (furniture, structures). */
@@ -249,7 +255,7 @@ export function renderHeightPoints(d: SiteData, t: TerrainModel, ctx: ViewCtx, s
             {hp.source === 'survey'
               ? <path d={`M${q.x} ${q.y - s}L${q.x + s} ${q.y + s * 0.7}L${q.x - s} ${q.y + s * 0.7}Z`} fill={col} />
               : <circle cx={q.x} cy={q.y} r={s * 0.8} fill="#fff" stroke={col} strokeWidth={0.3 * ctx.pu} />}
-            <text x={q.x + s * 1.3} y={q.y - s * 0.4} fontSize={2.2 * ctx.pu} fill={col} fontFamily="Rubik, Arial, sans-serif" direction="ltr" stroke="#fff" strokeWidth={0.6 * ctx.pu} paintOrder="stroke">{fmtLevel(hp.z)}</text>
+            <Halo width={0.6 * ctx.pu} text={<text x={q.x + s * 1.3} y={q.y - s * 0.4} fontSize={2.2 * ctx.pu} fill={col} fontFamily="Rubik, Arial, sans-serif" direction="ltr">{fmtLevel(hp.z)}</text>} />
           </g>
         );
       })}
@@ -283,7 +289,7 @@ export function renderSectionMarks(list: SiteSection[], ctx: ViewCtx, highlight?
         <g key={i}>
           <line x1={P.x} y1={P.y} x2={Tt.x} y2={Tt.y} stroke={col} strokeWidth={0.5 * ctx.pu} />
           <path d={`M${Tt.x} ${Tt.y}L${Tt.x - dd.x * h + nn.x * h * 0.5} ${Tt.y - dd.y * h + nn.y * h * 0.5}L${Tt.x - dd.x * h - nn.x * h * 0.5} ${Tt.y - dd.y * h - nn.y * h * 0.5}Z`} fill={col} />
-          <text x={lab.x} y={lab.y} fontSize={3.6 * ctx.pu} fontWeight={700} textAnchor="middle" dominantBaseline="middle" fill={col} fontFamily="Rubik, Arial, sans-serif" stroke="#fff" strokeWidth={0.8 * ctx.pu} paintOrder="stroke">{s.label}</text>
+          <Halo width={0.8 * ctx.pu} text={<text x={lab.x} y={lab.y} fontSize={3.6 * ctx.pu} fontWeight={700} textAnchor="middle" dominantBaseline="middle" fill={col} fontFamily="Rubik, Arial, sans-serif">{s.label}</text>} />
         </g>
       );
     });

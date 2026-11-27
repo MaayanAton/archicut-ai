@@ -8,7 +8,7 @@ import { Check, Seg } from '../common';
 import { Icons } from '../icons';
 import type { SiteData, SiteElement } from '../../site/types';
 import type { SiteModel } from '../../site/section';
-import { elementGroup, presetDir, setupLights, siteBounds, terrainGroup, type ViewPreset } from '../../site/three';
+import { batchGroup, elementGroup, presetDir, setupLights, siteBounds, terrainGroup, unbatch, type ViewPreset } from '../../site/three';
 import { translateEl } from '../../site/edit';
 import { baseLevel } from '../../site/prims';
 import { fmtLevel } from '../../site/units';
@@ -30,7 +30,12 @@ interface St {
   selBox: THREE.Box3Helper | null;
   render: () => void;
   bounds: { c: THREE.Vector3; R: number };
+  batch: THREE.Group | null;
+  batchTimer: number;
 }
+
+/** Above this many elements the 3D view merges the elements into one mesh per material. */
+const BATCH_MIN = 250;
 
 const PRESETS: { v: ViewPreset; label: string }[] = [
   { v: 'iso', label: 'איזומטרי' },
@@ -48,7 +53,8 @@ export function Site3D({ project, model, setData, compact = false }: { project: 
   const [error, setError] = useState<string | null>(null);
   const [proj, setProj] = useState<'persp' | 'ortho'>('persp');
   const [preset, setPreset] = useState<ViewPreset>('iso');
-  const [shadows, setShadows] = useState(true);
+  // Shadows double the drawing work; in big projects they start off (the checkbox turns them on).
+  const [shadows, setShadows] = useState(() => project.data.elements.length <= 400);
   const [sun, setSun] = useState({ az: 210, alt: 50 });
   const [walk, setWalk] = useState(false);
   const sel = useSiteUi((s) => s.sel);
@@ -71,7 +77,7 @@ export function Site3D({ project, model, setData, compact = false }: { project: 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0xeef1f4);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     el.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     const persp = new THREE.PerspectiveCamera(45, 1, 10, 1e7);
@@ -80,8 +86,10 @@ export function Site3D({ project, model, setData, compact = false }: { project: 
     ortho.up.set(0, 0, 1);
     const content = new THREE.Group();
     scene.add(content);
-    const s: St = { renderer, scene, persp, ortho, camera: persp, controls: null as unknown as OrbitControls, content, terrain: null, lights: [], selBox: null, render: () => {}, bounds: { c: new THREE.Vector3(), R: 10000 } };
-    s.render = () => renderer.render(scene, s.camera);
+    const s: St = { renderer, scene, persp, ortho, camera: persp, controls: null as unknown as OrbitControls, content, terrain: null, lights: [], selBox: null, render: () => {}, bounds: { c: new THREE.Vector3(), R: 10000 }, batch: null, batchTimer: 0 };
+    // Several changes in one moment (content, lights, selection, size) are drawn once, in the next frame.
+    let frame = 0;
+    s.render = () => { if (frame) return; frame = requestAnimationFrame(() => { frame = 0; renderer.render(scene, s.camera); }); };
     st.current = s;
 
     // Selecting and moving elements. Registered before OrbitControls so a drag on the selection does not orbit.
@@ -204,6 +212,8 @@ export function Site3D({ project, model, setData, compact = false }: { project: 
     resize();
     return () => {
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(frame);
+      window.clearTimeout(s.batchTimer);
       ro.disconnect();
       window.removeEventListener('keydown', kd);
       window.removeEventListener('keyup', ku);
@@ -238,6 +248,16 @@ export function Site3D({ project, model, setData, compact = false }: { project: 
       if (g.parent !== s.content) s.content.add(g);
     }
     for (const c of s.content.children.slice()) if (!keep.has(c)) { s.content.remove(c); c.traverse((o) => (o as THREE.Mesh).geometry?.dispose()); }
+    // Big projects are drawn from one merged mesh per material. After a change the elements are drawn one by one
+    // until the batch is rebuilt, shortly after the last change (so dragging stays responsive).
+    window.clearTimeout(s.batchTimer);
+    unbatch(s.content, s.batch);
+    s.batch = null;
+    if (model.items.length > BATCH_MIN) {
+      const build = () => { const ss = st.current; if (!ss) return; ss.batch = batchGroup(ss.content); ss.scene.add(ss.batch); ss.render(); };
+      if (!fitted.current) build();
+      else s.batchTimer = window.setTimeout(build, 400);
+    }
     const b = siteBounds(model, s.terrain.userData.zMin as number);
     s.bounds = { c: b.c, R: b.R };
     if (tg || !s.lights.length) {

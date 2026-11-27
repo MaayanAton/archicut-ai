@@ -164,7 +164,7 @@ export function PanZoomCanvas({ box, fitKey, render, pointer, label, cursor, mar
   };
 
   return (
-    <div className="canvas-wrap" ref={wrap} data-testid={testId} style={{ cursor: pan.current ? 'grabbing' : cursor }}
+    <div className="canvas-wrap" ref={wrap} data-testid={testId} data-view={view ? `${v.k} ${v.cx} ${v.cy}` : undefined} style={{ cursor: pan.current ? 'grabbing' : cursor }}
       onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
       onPointerLeave={() => pointer?.hover?.(null)}>
       {label && <div className="canvas-label">{label}</div>}

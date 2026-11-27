@@ -408,7 +408,7 @@ export function PlanEditor({ project, model, contours, mode, setData }: Props) {
       <PanZoomCanvas
         testId="site-plan"
         box={box}
-        fitKey={`${project.id}-${mode}`}
+        fitKey={`${project.id}-${mode}-${d.elements.filter((e) => e.kind === 'lot').length}`}
         cursor={tool.t === 'select' ? 'default' : 'crosshair'}
         pointer={pointer}
         render={(ctx, toWorld, size) => {
@@ -431,7 +431,7 @@ export function PlanEditor({ project, model, contours, mode, setData }: Props) {
         {draft.length > 0 && <button className="btn sm" onClick={() => setDraft([])}>ביטול</button>}
         {tool.t !== 'select' && draft.length === 0 && <button className="btn sm" onClick={() => ui.setTool({ t: 'select' })}>סיום הכלי</button>}
       </div>
-      <KeyHandler onEnter={() => canFinish && finishDraft()} onEsc={() => { if (draft.length) setDraft([]); else if (tool.t !== 'select') ui.setTool({ t: 'select' }); else ui.select([]); }} onBackspace={() => draft.length > 0 && setDraft(draft.slice(0, -1))} draftActive={draft.length > 0} />
+      <KeyHandler onEnter={() => { if (!canFinish) return false; finishDraft(); return true; }} onEsc={() => { if (draft.length) setDraft([]); else if (tool.t !== 'select') ui.setTool({ t: 'select' }); else ui.select([]); }} onBackspace={() => draft.length > 0 && setDraft(draft.slice(0, -1))} draftActive={draft.length > 0} />
 
       {dialog?.t === 'hpoint' && <HeightPointDialog p={dialog.p} suggested={model.terrain.sample(dialog.p)} onClose={() => setDialog(null)} onSave={(z, source, note) => {
         const hp = { id: uid(), p: dialog.p, z, source, note };
@@ -475,7 +475,7 @@ function CoordInput({ onEnter }: { onEnter: (t: string) => boolean }) {
   );
 }
 
-function KeyHandler({ onEnter, onEsc, onBackspace, draftActive }: { onEnter: () => void; onEsc: () => void; onBackspace: () => void; draftActive: boolean }) {
+function KeyHandler({ onEnter, onEsc, onBackspace, draftActive }: { onEnter: () => boolean; onEsc: () => void; onBackspace: () => void; draftActive: boolean }) {
   const ref = useRef({ onEnter, onEsc, onBackspace, draftActive });
   ref.current = { onEnter, onEsc, onBackspace, draftActive };
   useEffect(() => {
@@ -483,7 +483,8 @@ function KeyHandler({ onEnter, onEsc, onBackspace, draftActive }: { onEnter: () 
       const t = e.target as HTMLElement;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
       if (document.querySelector('.overlay')) return;
-      if (e.key === 'Enter') ref.current.onEnter();
+      // Finishing a drawing also stops Enter from pressing the toolbar button that still has the focus.
+      if (e.key === 'Enter') { if (ref.current.onEnter()) e.preventDefault(); }
       else if (e.key === 'Escape') ref.current.onEsc();
       else if (e.key === 'Backspace' && ref.current.draftActive) { e.preventDefault(); ref.current.onBackspace(); }
     };

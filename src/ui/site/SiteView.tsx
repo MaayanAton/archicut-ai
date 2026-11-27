@@ -10,7 +10,7 @@ import { buildSiteModel } from '../../site/section';
 import { contours as computeContours } from '../../site/terrain';
 import { rotateEl, selectionCenter, translateEl } from '../../site/edit';
 import { PlanEditor } from './PlanEditor';
-import { ActiveToolPanel, AreasPanel, LayersPanel, LibraryPanel, ModeToggle, PropertiesPanel, SettingsPanel } from './SitePanels';
+import { ActiveToolPanel, AreasPanel, LayersPanel, LibraryPanel, ModeToggle, PropertiesPanel, SettingsPanel, SitePanelAside } from './SitePanels';
 import { TerrainPanel } from './TerrainPanel';
 import { Site3D } from './Site3D';
 import { SectionsTab } from './SectionsTab';
@@ -90,7 +90,7 @@ export function SiteView({ project }: { project: SProject }) {
   const setTab = (v: SiteTab) => useSiteUi.setState({ tab: v, tool: { t: 'select' }, measure: null });
 
   const panel = (
-    <aside className="panel site-panel" aria-label="חלונית">
+    <SitePanelAside label="חלונית">
       <ModeToggle />
       {project.demo && <div className="notice warn">{Icons.info}<span>פרויקט הדגמה בנתונים לדוגמה בלבד. זה אינו פרויקט מהקורס. אפשר לשנות כל דבר.</span></div>}
       {tab === 'plan' && (
@@ -125,7 +125,7 @@ export function SiteView({ project }: { project: SProject }) {
       )}
       {tab === 'topo' && <TerrainPanel project={project} model={model} setData={setData} />}
       <button className="btn sm ghost" onClick={() => setHelp(true)}>{Icons.keyboard} קיצורי מקלדת</button>
-    </aside>
+    </SitePanelAside>
   );
 
   return (

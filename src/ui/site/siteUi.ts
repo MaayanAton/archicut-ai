@@ -17,6 +17,8 @@ export type SiteTool =
 export interface MeasureResult { a: Vec2; b: Vec2 }
 
 interface SiteUi {
+  /** Phone and tablet: the side panel can be folded to give the drawing more room. */
+  panelOpen: boolean;
   projectId: string | null;
   tab: SiteTab;
   tool: SiteTool;
@@ -49,6 +51,8 @@ export const useSiteUi = create<SiteUi>((set, get) => ({
   areaMode: 'polygon',
   curved: false,
   split: false,
+  // On a phone the drawing starts with the whole screen; the panel opens with one tap.
+  panelOpen: typeof window === 'undefined' || window.innerWidth >= 600,
   measure: null,
   reset(projectId) {
     if (get().projectId === projectId) return;

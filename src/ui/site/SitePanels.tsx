@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../../document/store';
 import { uid } from '../../document/factory';
 import type { Project } from '../../document/types';
@@ -410,3 +410,16 @@ export function ModeToggle() {
 }
 
 export const SOURCE_TEXT = ZSOURCE_LABELS;
+
+/** The side panel of the site views. On narrow screens it can be folded, so the drawing gets the room. */
+export function SitePanelAside({ label, children }: { label: string; children: ReactNode }) {
+  const open = useSiteUi((s) => s.panelOpen);
+  return (
+    <aside className={`panel site-panel ${open ? '' : 'collapsed'}`} aria-label={label}>
+      <button className="btn sm panel-toggle" aria-expanded={open} onClick={() => useSiteUi.setState({ panelOpen: !open })}>
+        {open ? 'קיפול החלונית ▾' : 'פתיחת החלונית ▴'}
+      </button>
+      {children}
+    </aside>
+  );
+}

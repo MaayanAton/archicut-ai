@@ -144,6 +144,7 @@ export function elementGroup(id: string, s: ElementSolids, t: TerrainModel, step
     m.castShadow = true;
     m.receiveShadow = true;
     m.userData.id = id;
+    m.userData.batchable = true;
     g.add(m);
   }
   s.surfaces.forEach((sf, i) => {
@@ -268,7 +269,11 @@ export function renderSnapshot(d: SiteData, model: SiteModel, view: 'iso' | 'per
     const scene = new THREE.Scene();
     const { group, zMin, step } = terrainGroup(d, model);
     scene.add(group);
-    for (const it of model.items) scene.add(elementGroup(it.e.id, it.s, model.terrain, step).clone());
+    for (const it of model.items) {
+      const g = elementGroup(it.e.id, it.s, model.terrain, step).clone();
+      g.traverse((o) => { o.visible = true; }); // the live 3D view may have hidden them behind its batch
+      scene.add(g);
+    }
     const { c, R } = siteBounds(model, zMin);
     setupLights(scene, c, R, { az: 210, alt: 50 }, true);
     const aspect = pxW / pxH;
@@ -277,11 +282,11 @@ export function renderSnapshot(d: SiteData, model: SiteModel, view: 'iso' | 'per
     if (view === 'persp') {
       const pc = new THREE.PerspectiveCamera(40, aspect, R / 100, R * 20);
       pc.up.set(0, 0, 1);
-      pc.position.copy(c).addScaledVector(dir, (R * 1.15) / Math.sin(THREE.MathUtils.degToRad(20)));
+      pc.position.copy(c).addScaledVector(dir, (R * 0.9) / Math.sin(THREE.MathUtils.degToRad(20)));
       pc.lookAt(c);
       camera = pc;
     } else {
-      const h = R * 1.05, w = h * aspect;
+      const h = R * 0.78 * Math.max(1, 1.5 / aspect), w = h * aspect;
       const oc = new THREE.OrthographicCamera(-w, w, h, -h, -R * 10, R * 10);
       oc.up.set(0, 0, 1);
       oc.position.copy(c).addScaledVector(dir, R * 3);
@@ -294,4 +299,47 @@ export function renderSnapshot(d: SiteData, model: SiteModel, view: 'iso' | 'per
     renderer.dispose();
     renderer.forceContextLoss();
   }
+}
+
+/**
+ * Big projects: one mesh per material for the whole site instead of a few meshes per element, so the GPU gets
+ * a handful of draw calls. The element groups stay in the scene, hidden, for picking and selection boxes.
+ */
+export function batchGroup(content: THREE.Group): THREE.Group {
+  content.updateMatrixWorld(true);
+  const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  for (const g of content.children) for (const o of g.children) {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.userData.batchable) continue;
+    const src = mesh.geometry;
+    const clean = new THREE.BufferGeometry();
+    clean.setAttribute('position', src.getAttribute('position').clone());
+    if (src.getAttribute('normal')) clean.setAttribute('normal', src.getAttribute('normal').clone());
+    else clean.computeVertexNormals();
+    if (src.index) clean.setIndex(src.index.clone());
+    const geo = clean.index ? clean.toNonIndexed() : clean;
+    geo.applyMatrix4(mesh.matrixWorld);
+    const mat = mesh.material as THREE.Material;
+    if (!byMat.has(mat)) byMat.set(mat, []);
+    byMat.get(mat)!.push(geo);
+    mesh.visible = false;
+  }
+  const out = new THREE.Group();
+  out.userData.batch = true;
+  for (const [mat, geos] of byMat) {
+    const merged = mergeGeometries(geos, false);
+    geos.forEach((x) => x.dispose());
+    if (!merged) continue;
+    const m = new THREE.Mesh(merged, mat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    out.add(m);
+  }
+  return out;
+}
+
+/** Shows the element meshes again and removes the batch (before a change is drawn). */
+export function unbatch(content: THREE.Group, batch: THREE.Group | null) {
+  if (batch) { batch.parent?.remove(batch); batch.traverse((o) => (o as THREE.Mesh).geometry?.dispose()); }
+  for (const g of content.children) for (const o of g.children) if (o.userData.batchable) o.visible = true;
 }

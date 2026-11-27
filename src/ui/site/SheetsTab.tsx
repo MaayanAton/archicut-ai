@@ -12,7 +12,7 @@ import type { SiteModel } from '../../site/section';
 import { autoSheet, buildSiteSheet, itemLabel, itemSize, sheetArea, sheetPaper, SHEET_SCALES, fitScale } from '../../site/render/sheet';
 import { renderSnapshot } from '../../site/three';
 import { MField } from './fields';
-import { ModeToggle } from './SitePanels';
+import { ModeToggle, SitePanelAside } from './SitePanels';
 import { sectionTitle } from './SectionsTab';
 
 type SProject = Extract<Project, { type: 'site' }>;
@@ -158,7 +158,7 @@ export function SheetsTab({ project, model, setData }: { project: SProject; mode
 
   return (
     <div className="workspace">
-      <aside className="panel site-panel" aria-label="גיליונות הגשה">
+      <SitePanelAside label="גיליונות הגשה">
         <ModeToggle />
         <div className="panel-section">
           <h3>גיליונות</h3>
@@ -267,7 +267,7 @@ export function SheetsTab({ project, model, setData }: { project: SProject; mode
             </div>
           </>
         )}
-      </aside>
+      </SitePanelAside>
       <section className="stage">
         {sheet && build ? (
           <div className="preview-wrap" ref={wrap}>

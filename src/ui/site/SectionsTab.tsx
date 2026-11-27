@@ -16,7 +16,7 @@ import { fmtM } from '../../site/units';
 import { MField } from './fields';
 import { PlanEditor } from './PlanEditor';
 import { useSiteUi } from './siteUi';
-import { ModeToggle } from './SitePanels';
+import { ModeToggle, SitePanelAside } from './SitePanels';
 
 type SProject = Extract<Project, { type: 'site' }>;
 type SetData = (fn: (d: SiteData) => SiteData, record?: boolean) => void;
@@ -60,7 +60,7 @@ export function SectionsTab({ project, model, contours, setData }: { project: SP
 
   return (
     <div className="workspace">
-      <aside className="panel site-panel" aria-label="חתכים">
+      <SitePanelAside label="חתכים">
         <ModeToggle />
         <div className="panel-section">
           <h3>חתכים וחזיתות</h3>
@@ -116,7 +116,7 @@ export function SectionsTab({ project, model, contours, setData }: { project: SP
             <span className="small muted">מקור גובה הקרקע לאורך הקו: {res.sources.map((s) => ZSOURCE_LABELS[s]).join('; ')}.</span>
           </div>
         )}
-      </aside>
+      </SitePanelAside>
       <section className="stage">
         <div className="view-tabs">
           <Seg value={pane} options={[{ v: 'section', label: 'החתך' }, { v: 'plan', label: 'התוכנית' }]} onChange={setPane} />

@@ -221,6 +221,7 @@ input[type='range'] { width: 100%; accent-color: var(--accent); height: 32px; }
 .site-tab.on { background: var(--accent-2); border-color: var(--accent); color: var(--accent); }
 .split-toggle { margin-inline-start: auto; font-size: 14px; color: var(--ink-2); white-space: nowrap; min-height: 36px; }
 .site-panel { width: 360px; }
+.panel-toggle { display: none; }
 .site-panel h3 { display: flex; align-items: center; gap: 6px; }
 .stage-col { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; position: relative; }
 .empty-stage { flex: 1; display: grid; place-items: center; padding: 24px; background: #fbfaf7; }
@@ -297,6 +298,12 @@ kbd { display: inline-block; min-width: 24px; padding: 1px 6px; border: 1px soli
 
 @media (max-width: 900px) {
   .site-panel { width: auto; }
+  .panel.site-panel { max-height: 36vh; padding-top: 8px; gap: 12px; }
+  .panel.site-panel.collapsed { max-height: 52px; overflow: hidden; }
+  .panel-toggle { display: flex; align-self: stretch; flex: none; }
+  .site-root .hint-bar { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+  .site-root .hint-bar > span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-width: 0; }
+  .site-root .tool { min-height: 48px; min-width: 52px; }
   .site-tab { padding: 0 10px; }
   .site-tab span { font-size: 14px; }
   .sections-split { grid-template-columns: 1fr; }
