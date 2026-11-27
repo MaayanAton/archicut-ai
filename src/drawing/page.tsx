@@ -131,7 +131,7 @@ export function suggestScale(parts: Part[], s: PrintSettings): number | null {
   return null;
 }
 
-function HText({ x, y, size, children, anchor = 'right', bold = false, fill = '#000' }: { x: number; y: number; size: number; children: ReactNode; anchor?: 'right' | 'left' | 'center'; bold?: boolean; fill?: string }) {
+export function HText({ x, y, size, children, anchor = 'right', bold = false, fill = '#000' }: { x: number; y: number; size: number; children: ReactNode; anchor?: 'right' | 'left' | 'center'; bold?: boolean; fill?: string }) {
   return (
     <text x={x} y={y} fontSize={size} fill={fill} direction="rtl" textAnchor={anchor === 'right' ? 'start' : anchor === 'left' ? 'end' : 'middle'}
       fontFamily="Rubik, Arial, sans-serif" fontWeight={bold ? 700 : 400}>{children}</text>
@@ -177,7 +177,7 @@ function TitleBlockSvg({ tb, s, w, h }: { tb: TitleBlock; s: PrintSettings; w: n
   );
 }
 
-function CalibrationRuler({ x, y }: { x: number; y: number }) {
+export function CalibrationRuler({ x, y }: { x: number; y: number }) {
   // Horizontal 100 mm with ticks every 5 mm, and a short 10 mm vertical leg to check the other axis.
   const t: ReactNode[] = [];
   for (let i = 0; i <= 100; i += 5) t.push(<line key={`h${i}`} x1={x + i} y1={y} x2={x + i} y2={y - (i % 10 === 0 ? 2.5 : 1.5)} stroke="#000" strokeWidth={0.2} />);

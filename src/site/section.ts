@@ -41,9 +41,30 @@ export interface SiteModel {
   items: { e: SiteElement; s: ElementSolids }[];
 }
 
+// Caches: the terrain is rebuilt only when its inputs change, and each element's solids only when the
+// element or the terrain changes. Large projects stay responsive while one element is dragged.
+let terrainCache: { key: string; t: TerrainModel } | null = null;
+const solidCache = new WeakMap<SiteElement, { t: TerrainModel; s: ElementSolids }>();
+
+function terrainKey(d: SiteData) {
+  const hidden = d.layers.filter((l) => !l.visible).map((l) => l.id);
+  const rel = d.elements.filter((e) => e.kind === 'lot' || e.kind === 'terrace').map((e) => [e.kind, e.layer, e.geom, e.params.level]);
+  const all = d.elements.some((e) => e.kind === 'lot') ? null : d.elements.map((e) => e.geom);
+  return JSON.stringify([d.terrain.base, d.terrain.points, d.terrain.mounds, rel, hidden, all]);
+}
+
 export function buildSiteModel(d: SiteData): SiteModel {
-  const terrain = buildTerrain(d);
-  return { terrain, items: visibleElements(d).map((e) => ({ e, s: elementSolids(e, terrain) })) };
+  const key = terrainKey(d);
+  if (!terrainCache || terrainCache.key !== key) terrainCache = { key, t: buildTerrain(d) };
+  const terrain = terrainCache.t;
+  const items = visibleElements(d).map((e) => {
+    const c = solidCache.get(e);
+    if (c && c.t === terrain) return { e, s: c.s };
+    const s = elementSolids(e, terrain);
+    solidCache.set(e, { t: terrain, s });
+    return { e, s };
+  });
+  return { terrain, items };
 }
 
 interface Frame { a: Vec2; b: Vec2; L: number; u: Vec2; n: Vec2; side: 1 | -1 }
@@ -202,7 +223,9 @@ export function computeSection(model: SiteModel, sec: SiteSection): SectionResul
       const zs = shapes.flatMap((c) => (c.poly ? c.poly.map((q) => q.z) : [c.ell!.cz + c.ell!.rz]));
       const sMid = (Math.min(...ss) + Math.max(...ss)) / 2, top = Math.max(...zs);
       if (LEVEL_KINDS.has(kind)) levels.push({ s: Math.max(...ss), z: top, ground: false });
-      if (DIM_KINDS.has(kind)) vdims.push({ s: Math.max(...ss), z0: groundAtS(ground, sMid), z1: top });
+      // A tree's height is only dimensioned when the plane passes through its trunk; an off-centre cut is lower than the tree.
+      const tree = kind.startsWith('tree-') || kind === 'palm';
+      if (DIM_KINDS.has(kind) && (!tree || shapes.some((c) => c.role === 'trunk'))) vdims.push({ s: Math.max(...ss), z0: groundAtS(ground, sMid), z1: top });
       if (kind === 'pond') { const w = shapes.find((c) => c.role === 'water'); if (w?.poly) levels.push({ s: (w.poly[0].s + w.poly[1].s) / 2, z: Math.max(...w.poly.map((q) => q.z)), ground: false }); }
     }
     for (const pad of model.terrain.pads) {

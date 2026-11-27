@@ -109,11 +109,13 @@ export function renderSiteSection(r: SectionResult, ctx: ViewCtx, opts: { mode: 
       seen.push(lv);
       const q = T(v2(lv.s, lv.z));
       const h = 1.6 * pu;
+      // The mark at the start of the line points outwards, so its text does not sit on the drawing.
+      const dir = lv.ground && lv.s < r.L * 0.01 ? -1 : 1;
       marks.push(
         <g key={`lv${i}`}>
           <path d={`M${q.x} ${q.y}L${q.x - h * 0.6} ${q.y - h}L${q.x + h * 0.6} ${q.y - h}Z`} fill={lv.ground ? '#fff' : '#111'} stroke="#111" strokeWidth={lw(0.15)} />
-          <line x1={q.x} y1={q.y - h} x2={q.x + 9 * pu} y2={q.y - h} stroke="#111" strokeWidth={lw(0.13)} />
-          <text x={q.x + 1 * pu} y={q.y - h - 0.8 * pu} fontSize={2.3 * pu} fontFamily="Rubik, Arial, sans-serif" direction="ltr" fill="#111">{fmtLevel(lv.z)}</text>
+          <line x1={q.x} y1={q.y - h} x2={q.x + dir * 9 * pu} y2={q.y - h} stroke="#111" strokeWidth={lw(0.13)} />
+          <text x={q.x + dir * 1 * pu} y={q.y - h - 0.8 * pu} fontSize={2.3 * pu} fontFamily="Rubik, Arial, sans-serif" direction="ltr" textAnchor={dir < 0 ? 'end' : 'start'} fill="#111">{fmtLevel(lv.z)}</text>
         </g>,
       );
     });
@@ -121,8 +123,12 @@ export function renderSiteSection(r: SectionResult, ctx: ViewCtx, opts: { mode: 
 
   const dims: ReactNode[] = [];
   if (opts.showDims) {
-    r.vdims.slice(0, 16).forEach((vd, i) => {
+    const used: number[] = [];
+    [...r.vdims].sort((a, b) => a.s - b.s).slice(0, 16).forEach((vd, i) => {
       if (vd.z1 - vd.z0 < 50) return;
+      // Skip a height dimension that would sit on top of the previous one.
+      if (used.some((s0) => Math.abs(s0 - vd.s) < 6 * wpu)) return;
+      used.push(vd.s);
       dims.push(<Dimension key={`vd${i}`} a={v2(vd.s + 1.5 * wpu, vd.z0)} b={v2(vd.s + 1.5 * wpu, vd.z1)} offset={-2.5 * wpu} ctx={ctx} color="#222" width={0.15} text={mToStr(vd.z1 - vd.z0, 2)} />);
     });
     dims.push(<Dimension key="hd" a={v2(0, zDatum)} b={v2(r.L, zDatum)} offset={-6 * wpu} ctx={ctx} color="#222" width={0.15} text={mToStr(r.L, 2)} />);

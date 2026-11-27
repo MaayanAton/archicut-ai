@@ -1,6 +1,7 @@
 import { defaultEpureSettings, type SpacePoint } from '../geometry/projection';
 import type { SolidParams } from '../geometry/solids';
 import { emptySite } from '../site/migrate';
+import { DEMO_PARK_NAME, demoParkData } from '../site/demo';
 import type { DrawingData, DrawingElement, PrintSettings, Project, ProjectType, TitleBlock } from './types';
 
 export const uid = () =>
@@ -103,5 +104,16 @@ export function demoProjects(): Project[] {
     draw.titleBlock.title = 'תוכנית חדר – הדגמה';
   }
 
-  return [mk(proj, 0), mk(cube, 1000), mk(cyl, 2000), mk(cone, 3000), mk(draw, 4000)];
+  return [mk(demoParkProject(), 0), mk(proj, 1000), mk(cube, 2000), mk(cyl, 3000), mk(cone, 4000), mk(draw, 5000)];
+}
+
+/** The site-planning demonstration: "פארק ציבורי לדוגמה", 60 × 40 m, with sample values only. */
+export function demoParkProject(): Project {
+  const park = newProject('site', `הדגמה: ${DEMO_PARK_NAME}`);
+  if (park.type === 'site') {
+    park.data = demoParkData(uid);
+    park.print = { ...park.print, paper: 'A3', orientation: 'landscape', scale: 200, blackWhite: false };
+    park.titleBlock = { ...park.titleBlock, title: `${DEMO_PARK_NAME} – הדגמה` };
+  }
+  return { ...park, demo: true };
 }

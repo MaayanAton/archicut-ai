@@ -107,7 +107,11 @@ export interface PlanOpts {
   /** Hide elements on hidden layers (default true). */
   hiddenLayers?: Set<string>;
   dimText?: (mm: number) => string;
+  /** Topography view: elements that do not shape the ground are drawn faded, and contours stronger. */
+  fade?: boolean;
 }
+
+const TOPO_KINDS = new Set(['lot', 'terrace', 'wall', 'stairs', 'ramp', 'dim', 'pond']);
 
 const ORDER: Record<string, number> = {
   zone: 0, terrace: 1, lawn: 2, planting: 2, gravel: 3, plaza: 3, seating: 3, sport: 3, path: 4, pond: 5, bed: 6, deck: 6,
@@ -129,7 +133,7 @@ export function renderSitePlan(d: SiteData, model: SiteModel, ctx: ViewCtx, opts
     opts.contours.forEach((c, ci) => {
       const major = Math.abs(Math.round(c.level / (d.terrain.contourStep * 4)) * d.terrain.contourStep * 4 - c.level) < 1e-6;
       c.lines.forEach((ln, li) => {
-        contourLayer.push(<path key={`c${ci}-${li}`} d={pathD(ln, ctx, false)} fill="none" stroke={bw ? '#777' : '#a0703c'} strokeWidth={lw(major ? 0.25 : 0.13)} strokeOpacity={0.9} />);
+        contourLayer.push(<path key={`c${ci}-${li}`} d={pathD(ln, ctx, false)} fill="none" stroke={bw ? '#777' : '#a0703c'} strokeWidth={lw(opts.fade ? (major ? 0.35 : 0.2) : major ? 0.25 : 0.13)} strokeOpacity={0.9} />);
       });
       const longest = c.lines.reduce((best, ln) => (ln.length > best.length ? ln : best), [] as Vec2[]);
       if (longest.length > 6) {
@@ -166,7 +170,7 @@ export function renderSitePlan(d: SiteData, model: SiteModel, ctx: ViewCtx, opts
           {e.kind === 'sport' && polyArea(pts) > 4e6 && <path d={pathD(insetPolygon(pts, 1000), ctx, true)} fill="none" stroke="#fff" strokeWidth={lw(0.3)} />}
         </g>
       );
-      if (e.kind === 'terrace') labels.push(<Txt key={`tl${key}`} p={centroid(pts)} ctx={ctx} size={2.4} color="#333" bg>{fmtLevel(prm(e, 'level'))}</Txt>);
+      if (e.kind === 'terrace') labels.push(<Txt key={`tl${key}`} p={centroid(pts)} ctx={ctx} size={2.4} color="#333" bg>{e.name ? `${e.name} ${fmtLevel(prm(e, 'level'))}` : fmtLevel(prm(e, 'level'))}</Txt>);
     } else if (e.kind === 'building' && g.type === 'area') {
       const pts = elementOutline(e);
       const inner = insetPolygon(pts, prm(e, 'wall'));
@@ -211,8 +215,8 @@ export function renderSitePlan(d: SiteData, model: SiteModel, ctx: ViewCtx, opts
         }
       }
     }
-    out.push(<g key={key} data-el={e.id}>{node}</g>);
-    if (e.name && e.kind !== 'zone' && e.kind !== 'text') {
+    out.push(<g key={key} data-el={e.id} opacity={opts.fade && !TOPO_KINDS.has(e.kind) ? 0.35 : undefined}>{node}</g>);
+    if (e.name && e.kind !== 'zone' && e.kind !== 'text' && e.kind !== 'terrace') {
       const c = g.type === 'point' ? g.p : g.type === 'dim' ? g.a : centroid(elementPath(e));
       labels.push(<Txt key={`nl${key}`} p={c} ctx={ctx} size={2.4} color="#111" bg>{e.name}</Txt>);
     }

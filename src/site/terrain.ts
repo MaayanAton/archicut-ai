@@ -273,3 +273,19 @@ export function terrainBreaks(m: TerrainModel, a: Vec2, b: Vec2): { t: number; s
   }
   return out;
 }
+
+/**
+ * Lowest and highest ground level on the site. The TIN is linear between its points, so its extremes are at the points;
+ * hills peak at their centres and level areas are flat. A coarse grid covers the overlaps between them.
+ */
+export function terrainRange(m: TerrainModel): { lo: number; hi: number } {
+  const b = m.domain;
+  const cand: Vec2[] = [...m.verts.map((v) => v.p), ...m.mounds.map((x) => x.c)];
+  for (const pad of m.pads) cand.push(...pad.pts);
+  for (let i = 0; i <= 30; i++) for (let j = 0; j <= 30; j++) cand.push({ x: b.minX + ((b.maxX - b.minX) * i) / 30, y: b.minY + ((b.maxY - b.minY) * j) / 30 });
+  let lo = Infinity, hi = -Infinity;
+  const inside = (p: Vec2) => p.x >= b.minX - 1e-6 && p.x <= b.maxX + 1e-6 && p.y >= b.minY - 1e-6 && p.y <= b.maxY + 1e-6;
+  for (const p of cand) if (inside(p)) { const z = m.z(p); if (z < lo) lo = z; if (z > hi) hi = z; }
+  for (const pad of m.pads) { lo = Math.min(lo, pad.z); hi = Math.max(hi, pad.z); }
+  return { lo, hi };
+}

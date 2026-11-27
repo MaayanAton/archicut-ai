@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import type { Project, ProjectType } from './types';
-import { demoProjects, newProject, uid } from './factory';
+import { demoParkProject, demoProjects, newProject, uid } from './factory';
 import * as storage from '../storage/storage';
 
 const HISTORY_LIMIT = 150;
@@ -99,6 +99,12 @@ export const useStore = create<State>((set, get) => {
           const demos = demoProjects();
           for (const p of demos) await storage.saveProject(p);
           await storage.setMeta('seeded', true);
+          projects = await storage.loadAllProjects();
+          await storage.setMeta('seeded-site-demo', true);
+        } else if (!(await storage.getMeta('seeded-site-demo'))) {
+          // Version 2.0 adds a site-planning demo. Existing users get it once; deleting it is final.
+          await storage.saveProject(demoParkProject());
+          await storage.setMeta('seeded-site-demo', true);
           projects = await storage.loadAllProjects();
         }
         set({ projects, loaded: true });
