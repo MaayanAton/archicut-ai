@@ -323,6 +323,16 @@ const toastText = async (page) => (await page.locator('.toast').allInnerTexts())
     await pg.getByRole('button', { name: /פתיחת החלונית/ }).tap();
     await pg.waitForTimeout(300);
     check(await pg.getByText('שטחים בקומה').isVisible(), 'phone: the folded panel opens with one tap (areas of the level)');
+    await pg.getByRole('button', { name: /קיפול החלונית/ }).tap();
+    await pg.waitForTimeout(300);
+    const pv = await viewOf(pg, P);
+    const bed = pv.toScreen(2160, 6400);
+    await pg.touchscreen.tap(bed.x, bed.y);
+    await pg.waitForTimeout(400);
+    await pg.getByRole('button', { name: /פתיחת החלונית/ }).tap();
+    await pg.waitForTimeout(300);
+    check(/מיטה זוגית/.test(await pg.locator('aside').first().innerText()), 'phone: tapping the bed in the plan selects it and shows its properties');
+    await pg.screenshot({ path: 'shots/t-bld-phone-selected.png' });
     for (const [t, sel] of [['תלת', '[data-testid="bld-3d"]'], ['חתכים', '.sec-list'], ['טבלאות', 'table'], ['גיליונות', '[data-testid="bsheet-preview"]']]) {
       await pg.getByRole('tab', { name: new RegExp(t) }).tap();
       await pg.waitForTimeout(1200);

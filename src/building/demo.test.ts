@@ -96,3 +96,29 @@ describe('copy to a site project', () => {
     expect(site.elements.length).toBe(r.data.elements.length - 1); // the original site data is not changed
   });
 });
+
+describe('a large building', () => {
+  it('builds 880 walls, 880 openings and 400 rooms on 4 levels quickly and without warnings', async () => {
+    const { emptyBuilding, newLevel } = await import('./migrate');
+    const { newWall, newRoom, newOpening } = await import('./factories');
+    const { v2 } = await import('../geometry/vec');
+    const d = emptyBuilding(id());
+    for (let L = 1; L < 4; L++) d.levels.push(newLevel(id(), `L${L}`, L * 3000, 'upper'));
+    const N = 10, S = 4000;
+    for (const lv of d.levels) {
+      for (let i = 0; i <= N; i++) for (let j = 0; j < N; j++) {
+        const ext = i === 0 || i === N;
+        const a = newWall(id(), lv.id, v2(i * S, j * S), v2(i * S, (j + 1) * S), { thickness: ext ? 250 : 100, kind: ext ? 'exterior' : 'interior' });
+        const b = newWall(id(), lv.id, v2(j * S, i * S), v2((j + 1) * S, i * S), { thickness: ext ? 250 : 100, kind: ext ? 'exterior' : 'interior' });
+        d.walls.push(a, b);
+        d.openings.push(newOpening(id(), a.id, 'door', 2000, {}), newOpening(id(), b.id, 'window', 2000, {}));
+      }
+      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) d.rooms.push(newRoom(id(), lv.id, `R${i}${j}`, v2(i * S + S / 2, j * S + S / 2)));
+    }
+    const t = performance.now();
+    const m = buildModel(d, 'proposed');
+    expect(performance.now() - t).toBeLessThan(3000);
+    expect(m.warnings).toEqual([]);
+    expect(m.levels.every((l) => l.rooms.length === 100 && l.rooms.every((r) => r.area > 14e6 && r.area < 16e6))).toBe(true);
+  });
+});
