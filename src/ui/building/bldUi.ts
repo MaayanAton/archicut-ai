@@ -50,6 +50,8 @@ interface BldUi {
   presets: Presets;
   /** Element to show (from the warnings list). */
   focus: string | null;
+  /** Section shown in the sections tab. */
+  selSection: string | null;
   reset(projectId: string, levelId: string, renovation: boolean): void;
   setTool(t: BTool): void;
   select(ids: string[]): void;
@@ -71,9 +73,10 @@ export const useBldUi = create<BldUi>((set, get) => ({
   panelOpen: typeof window === 'undefined' || window.innerWidth >= 600,
   presets: { wallThickness: 200, wallHeight: null, wallKind: 'exterior', openW: null, openH: null, openSill: null, furnRot: 0, roomName: '' },
   focus: null,
+  selSection: null,
   reset(projectId, levelId, renovation) {
     if (get().projectId === projectId) return;
-    set({ projectId, tab: 'plan', levelId, tool: { t: 'select' }, sel: [], state: renovation ? 'compare' : 'proposed', focus: null });
+    set({ projectId, tab: 'plan', levelId, tool: { t: 'select' }, sel: [], state: renovation ? 'compare' : 'proposed', focus: null, selSection: null });
   },
   setTool(t) { set({ tool: t, ...(t.t !== 'select' ? { sel: [] } : {}) }); },
   select(ids) { set({ sel: ids }); },

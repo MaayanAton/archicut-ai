@@ -19,6 +19,8 @@ import {
 } from './Panels';
 import { TablesTab } from './TablesTab';
 import { Building3D } from './Building3D';
+import { SectionsTab } from './SectionsTab';
+import { SheetsTab } from './SheetsTab';
 import { useBldUi, type BTab, type BTool } from './bldUi';
 
 type BProject = Extract<Project, { type: 'building' }>;
@@ -26,7 +28,9 @@ type BProject = Extract<Project, { type: 'building' }>;
 const TABS: { v: BTab; label: string; icon: keyof typeof Icons }[] = [
   { v: 'plan', label: 'תוכנית', icon: 'pencil' },
   { v: '3d', label: 'תלת־ממד', icon: 'view3d' },
+  { v: 'sections', label: 'חתכים וחזיתות', icon: 'section' },
   { v: 'tables', label: 'טבלאות שטחים וכמויות', icon: 'table' },
+  { v: 'sheets', label: 'גיליונות הגשה', icon: 'sheet' },
 ];
 
 export function BuildingView({ project }: { project: BProject }) {
@@ -204,7 +208,9 @@ export function BuildingView({ project }: { project: BProject }) {
           </section>
         </div>
       )}
+      {tab === 'sections' && <SectionsTab project={project} model={model} setData={setData} levelId={levelId} />}
       {tab === 'tables' && <TablesTab project={project} model={model} />}
+      {tab === 'sheets' && <SheetsTab project={project} setData={setData} />}
       {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
       {house && <HouseDialog title={house === 'outside' ? 'בית חדש במידות חוץ' : 'חדר במידות פנים'} interior={house === 'inside'} onClose={() => setHouse(null)} onSave={(v) => {
         const r = createRectHouse(d, levelId, v, house === 'inside');
@@ -255,6 +261,7 @@ function PlanToolbar({ project, levelId }: { project: BProject; levelId: string 
       {b({ t: 'dim' }, 'מידה', 'dim', tool.t === 'dim')}
       {b({ t: 'text' }, 'טקסט', 'text', tool.t === 'text')}
       {b({ t: 'measure' }, 'מדידה', 'ruler', tool.t === 'measure', 'מדידה (M)')}
+      {b({ t: 'section' }, 'קו חתך', 'section', tool.t === 'section')}
     </div>
   );
 }

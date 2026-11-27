@@ -258,9 +258,21 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
       const tip = v2(p.x + nn.x * h, p.y + nn.y * h), w2 = pw(1);
       return <g key={k}><line x1={p.x} y1={p.y} x2={tip.x} y2={tip.y} stroke={col} strokeWidth={pw(0.35)} /><path d={`M${tip.x + nn.x * w2} ${tip.y + nn.y * w2}L${tip.x + u.x * w2} ${tip.y + u.y * w2}L${tip.x - u.x * w2} ${tip.y - u.y * w2}Z`} fill={col} /></g>;
     };
+    if (s.mode === 'elevation') {
+      // An elevation: one arrow in the middle, pointing at the building, with its name behind it.
+      const m = v2((a.x + b.x) / 2, (a.y + b.y) / 2);
+      nodes.push(
+        <g key={`sec${s.id}`} data-el={s.id}>
+          <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={col} strokeWidth={pw(0.2)} strokeDasharray={`${pw(1)} ${pw(1)}`} />
+          {arrow(m, 'a1')}
+          <text x={m.x - nn.x * pw(3)} y={m.y - nn.y * pw(3)} fontSize={pw(2.6)} fontWeight={700} textAnchor="middle" dominantBaseline="middle" fill={col} fontFamily="Rubik, Arial, sans-serif" direction="rtl">{s.label}</text>
+        </g>,
+      );
+      continue;
+    }
     nodes.push(
-      <g key={`sec${s.id}`}>
-        <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={col} strokeWidth={pw(0.3)} strokeDasharray={s.mode === 'section' ? `${pw(6)} ${pw(1.5)} ${pw(1)} ${pw(1.5)}` : `${pw(1)} ${pw(1)}`} />
+      <g key={`sec${s.id}`} data-el={s.id}>
+        <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={col} strokeWidth={pw(0.3)} strokeDasharray={`${pw(6)} ${pw(1.5)} ${pw(1)} ${pw(1.5)}`} />
         {arrow(a, 'a1')}{arrow(b, 'a2')}
         <text x={a.x - u.x * pw(2.5)} y={a.y - u.y * pw(2.5)} fontSize={pw(3.4)} fontWeight={700} textAnchor="middle" dominantBaseline="middle" fill={col} fontFamily="Rubik, Arial, sans-serif">{s.label}</text>
         <text x={b.x + u.x * pw(2.5)} y={b.y + u.y * pw(2.5)} fontSize={pw(3.4)} fontWeight={700} textAnchor="middle" dominantBaseline="middle" fill={col} fontFamily="Rubik, Arial, sans-serif">{s.label}</text>

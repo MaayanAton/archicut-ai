@@ -54,6 +54,14 @@ describe('building model', () => {
     expect(checkWallOpenings(w, [{ ...win(w.id, 3000), height: 2000 }], 2700).some((p) => p.msg.includes('גבוה'))).toBe(true);
     const placed = placeOpening(d, w, { ...win(w.id, 0), id: 'x' }, 50);
     expect('o' in placed && placed.o.pos).toBe(600);
+    // A demolished window and the wider new one in its place never exist together: not an overlap.
+    const old = { ...win(w.id, 3000), id: 'old', phase: 'demolish' as const }, neu = { ...win(w.id, 3200), id: 'neu', width: 2400, phase: 'new' as const };
+    expect(checkWallOpenings(w, [old, neu], 2700)).toEqual([]);
+    // Overlaps are found pair by pair, not only between neighbours, and both openings are named.
+    const probs = checkWallOpenings(w, [{ ...win(w.id, 3000), id: 'a', width: 3000 }, { ...win(w.id, 2500), id: 'b', width: 400 }, { ...win(w.id, 4000), id: 'c', width: 400 }], 2700);
+    expect(new Set(probs.filter((p) => p.msg.includes('חופף')).map((p) => p.id))).toEqual(new Set(['a', 'b', 'c']));
+    const fit = placeOpening({ ...d, openings: [old] }, w, { ...win(w.id, 0), id: 'n2', phase: 'new' }, 3000);
+    expect('o' in fit && fit.o.pos).toBe(3000);
   });
   it('keeps joints closed when a wall moves and keeps openings in place when the start point moves', () => {
     const d = house();

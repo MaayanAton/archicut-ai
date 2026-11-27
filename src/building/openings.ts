@@ -1,6 +1,6 @@
 // Doors and windows: kinds, default sizes and the checks that keep an opening inside its wall.
 
-import type { Opening, OpeningKind, Wall } from './types';
+import type { Opening, OpeningKind, Phase, Wall } from './types';
 
 export interface OpeningDef {
   kind: OpeningKind;
@@ -37,6 +37,8 @@ export const wallLength = (w: Wall) => Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
 
 export interface OpeningProblem { id: string; msg: string; severe: boolean }
 
+const OVERLAP = 'הפתח חופף לפתח אחר באותו קיר.';
+
 /** Checks one wall's openings: inside the wall's length and height, no overlaps. Severe problems block a change. */
 export function checkWallOpenings(wall: Wall, openings: Opening[], wallHeight: number): OpeningProblem[] {
   const L = wallLength(wall);
@@ -48,18 +50,28 @@ export function checkWallOpenings(wall: Wall, openings: Opening[], wallHeight: n
     if (o.pos - o.width / 2 < -0.5 || o.pos + o.width / 2 > L + 0.5) out.push({ id: o.id, msg: `הפתח חורג מאורך הקיר (${(L / 1000).toFixed(2)} מ׳).`, severe: true });
     if (o.sill + o.height > wallHeight + 0.5) out.push({ id: o.id, msg: `הפתח גבוה מהקיר (גובה הקיר ${(wallHeight / 1000).toFixed(2)} מ׳).`, severe: true });
   }
-  for (let i = 0; i + 1 < list.length; i++) {
-    const a = list[i], b = list[i + 1];
-    if (a.pos + a.width / 2 > b.pos - b.width / 2 + 0.5) out.push({ id: b.id, msg: 'הפתח חופף לפתח אחר באותו קיר.', severe: true });
+  // Overlaps, pair by pair. An opening that is demolished and a new one in its place never exist together, so that
+  // pair is not an overlap (a renovation often replaces a window with a wider one).
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j];
+      if (b.pos - b.width / 2 >= a.pos + a.width / 2 - 0.5 || a.pos - a.width / 2 >= b.pos + b.width / 2 - 0.5) continue;
+      if (!coexist(a.phase, b.phase)) continue;
+      for (const x of [a, b]) if (!out.some((p) => p.id === x.id && p.msg === OVERLAP)) out.push({ id: x.id, msg: OVERLAP, severe: true });
+    }
   }
   return out;
 }
 
-/** Nearest valid centre for a new opening of width w near pos, or null if the wall has no room for it. */
-export function fitOpening(wall: Wall, openings: Opening[], w: number, pos: number, ignoreId?: string): number | null {
+/** Whether two elements of these phases exist at the same time (in the existing building or in the proposal). */
+export const coexist = (a: Phase | undefined, b: Phase | undefined) => !((a === 'demolish' && b === 'new') || (a === 'new' && b === 'demolish'));
+
+/** Nearest valid centre for a new opening of width w near pos, or null if the wall has no room for it. Openings of a
+ *  phase that never exists together with `phase` (demolished vs new) do not take up room. */
+export function fitOpening(wall: Wall, openings: Opening[], w: number, pos: number, ignoreId?: string, phase?: Phase): number | null {
   const L = wallLength(wall);
   if (w > L) return null;
-  const others = openings.filter((o) => o.wallId === wall.id && o.id !== ignoreId).map((o) => [o.pos - o.width / 2, o.pos + o.width / 2] as const).sort((a, b) => a[0] - b[0]);
+  const others = openings.filter((o) => o.wallId === wall.id && o.id !== ignoreId && coexist(o.phase, phase)).map((o) => [o.pos - o.width / 2, o.pos + o.width / 2] as const).sort((a, b) => a[0] - b[0]);
   // Free intervals for the centre.
   const free: [number, number][] = [];
   let start = 0;

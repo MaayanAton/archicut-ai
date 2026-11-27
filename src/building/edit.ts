@@ -246,7 +246,7 @@ export function nearestWall(d: BuildingData, levelId: string, p: Vec2, tol: numb
 
 /** Places an opening on a wall near s (snapped to 10 mm), or returns a reason why it cannot be placed. */
 export function placeOpening(d: BuildingData, wall: Wall, base: Omit<Opening, 'pos' | 'wallId'>, s: number): { o: Opening } | { error: string } {
-  const pos = fitOpening(wall, d.openings, base.width, Math.round(s / 10) * 10, base.id);
+  const pos = fitOpening(wall, d.openings, base.width, Math.round(s / 10) * 10, base.id, base.phase);
   if (pos === null) return { error: `אין בקיר מקום פנוי לפתח ברוחב ${(base.width / 1000).toFixed(2)} מ׳.` };
   return { o: { ...base, wallId: wall.id, pos } };
 }

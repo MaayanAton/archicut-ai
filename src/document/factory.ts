@@ -3,6 +3,8 @@ import type { SolidParams } from '../geometry/solids';
 import { emptySite } from '../site/migrate';
 import { DEMO_PARK_NAME, demoParkData } from '../site/demo';
 import { emptyBuilding } from '../building/migrate';
+import { DEMO_APARTMENT_NAME, DEMO_HOUSE_NAME, DEMO_RENOVATION_NAME, demoApartment, demoHouse, demoRenovation } from '../building/demo';
+import type { BuildingData } from '../building/types';
 import type { DrawingData, DrawingElement, PrintSettings, Project, ProjectType, TitleBlock } from './types';
 
 export const uid = () =>
@@ -106,7 +108,7 @@ export function demoProjects(): Project[] {
     draw.titleBlock.title = 'תוכנית חדר – הדגמה';
   }
 
-  return [mk(demoParkProject(), 0), mk(proj, 1000), mk(cube, 2000), mk(cyl, 3000), mk(cone, 4000), mk(draw, 5000)];
+  return [...demoBuildingProjects(), mk(demoParkProject(), 0), mk(proj, 1000), mk(cube, 2000), mk(cyl, 3000), mk(cone, 4000), mk(draw, 5000)];
 }
 
 /** The site-planning demonstration: "פארק ציבורי לדוגמה", 60 × 40 m, with sample values only. */
@@ -118,4 +120,22 @@ export function demoParkProject(): Project {
     park.titleBlock = { ...park.titleBlock, title: `${DEMO_PARK_NAME} – הדגמה` };
   }
   return { ...park, demo: true };
+}
+
+/** The three building demonstrations of version 3.0 (an apartment, a two-storey house, a renovation). Sample values only. */
+export function demoBuildingProjects(): Project[] {
+  const now = Date.now();
+  const list: [string, (id: () => string) => BuildingData, PrintSettings['paper']][] = [
+    [DEMO_APARTMENT_NAME, demoApartment, 'A3'],
+    [DEMO_HOUSE_NAME, demoHouse, 'A3'],
+    [DEMO_RENOVATION_NAME, demoRenovation, 'A3'],
+  ];
+  return list.map(([name, make, paper], i) => {
+    const p = newProject('building', name);
+    if (p.type !== 'building') return p;
+    p.data = make(uid);
+    p.print = { ...p.print, paper, orientation: 'landscape', scale: 100, blackWhite: false };
+    p.titleBlock = { ...p.titleBlock, title: p.data.info.projectTitle };
+    return { ...p, demo: true, createdAt: now + 30 - i * 10, updatedAt: now + 30 - i * 10 };
+  });
 }

@@ -127,7 +127,7 @@ export function PlanEditor({ project, model, setData, levelId }: { project: BPro
     if (tool.t === 'furniture' && e.key.toLowerCase() === 'r') { useBldUi.setState({ presets: { ...ui.presets, furnRot: (ui.presets.furnRot + (e.shiftKey ? -90 : 90)) % 360 } }); }
   };
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (document.querySelector('.overlay')) return; if (useBldUi.getState().tab === 'plan') keyHandler.current(e); };
+    const k = (e: KeyboardEvent) => { if (document.querySelector('.overlay')) return; const tb = useBldUi.getState().tab; if (tb === 'plan' || tb === 'sections') keyHandler.current(e); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, []);
@@ -235,7 +235,7 @@ export function PlanEditor({ project, model, setData, levelId }: { project: BPro
           else {
             const id = uid();
             add1((dd) => ({ ...dd, sections: [...dd.sections, { id, label: nextBSectionLabel(dd.sections), mode: 'section', a, b: p, side: 1, depth: 30000, showDims: true, showLevels: true, showFurniture: true }] }));
-            toast('נוצר קו חתך. החתך מוצג בלשונית "חתכים וחזיתות".');
+            if (useBldUi.getState().tab !== 'sections') toast('נוצר קו חתך. החתך מוצג בלשונית "חתכים וחזיתות".');
             useBldUi.setState({ tool: { t: 'select' } });
           }
           return true;
@@ -265,7 +265,7 @@ export function PlanEditor({ project, model, setData, levelId }: { project: BPro
         const u = norm(sub(wl.b, wl.a));
         let s = dot(sub(w, wl.a), u) - dr.off;
         if (!e.altKey) s = Math.round(s / 50) * 50;
-        const pos = fitOpening(wl, dr.orig.openings, o.width, s, o.id);
+        const pos = fitOpening(wl, dr.orig.openings, o.width, s, o.id, o.phase);
         if (pos !== null) setData(() => ({ ...dr.orig, openings: dr.orig.openings.map((x) => (x.id === o.id ? { ...x, pos } : x)) }), false);
       }
     },
@@ -319,7 +319,7 @@ export function PlanEditor({ project, model, setData, levelId }: { project: BPro
       if (nw) {
         const def = openingDef(tool.kind);
         const w = ui.presets.openW ?? def.w;
-        const pos = fitOpening(nw.wall, d.openings, w, nw.s);
+        const pos = fitOpening(nw.wall, d.openings, w, nw.s, undefined, phase);
         const u = norm(sub(nw.wall.b, nw.wall.a));
         if (pos !== null) { const a = ctx.T(add(nw.wall.a, mul(u, pos - w / 2))), b = ctx.T(add(nw.wall.a, mul(u, pos + w / 2))); nodes.push(<line key="opv" x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={SEL} strokeWidth={Math.max(4, nw.wall.thickness * ctx.k)} strokeOpacity={0.6} />); }
       }
