@@ -10,7 +10,7 @@ import { add, mul, norm, perpL, rotatePt, sub } from '../../site/poly';
 import { tone, Halo } from '../../site/render/plan';
 import { fmtArea, mToStr } from '../../site/units';
 import type { BldSection, BuildingData, Furniture, Phase, PlanKind, ViewState } from '../types';
-import { columnOutline, furnitureOutline, inState, type BuildingModel, type LevelModel, type OpeningModel } from '../model';
+import { columnOutline, furnitureOutline, inState, sortedLevels, type BuildingModel, type LevelModel, type OpeningModel } from '../model';
 import { furn, partColor } from '../furniture';
 import { stairGeom } from '../stairs';
 
@@ -182,6 +182,23 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
     if (!g.treads.length && g.outline.length === 0) nodes.push(<Txt key={`${st.id}e`} p={st.p} ctx={ctx} size={2} color={RED}>{'מדרגות: נתונים לא תקינים'}</Txt>);
   }
 
+  // A stair that rises from the level below into this one, seen from above through its opening: thin lines and "ירידה".
+  const lvls = sortedLevels(dd);
+  const below = lvls[lvls.findIndex((l) => l.id === levelId) - 1];
+  if (below) for (const st of dd.stairs.filter((x) => x.levelId === below.id && inState(x.phase, state, ren))) {
+    const g = stairGeom(st);
+    if (!g.treads.length) continue;
+    const col = '#6b6b6b';
+    for (const [i, t] of g.treads.entries()) nodes.push(<path key={`${st.id}bt${i}`} d={d(t.poly, ctx)} fill="none" stroke={col} strokeWidth={pw(0.1)} />);
+    if (g.path.length >= 2) {
+      nodes.push(<path key={`${st.id}bp`} d={d(g.path, ctx, false)} fill="none" stroke={col} strokeWidth={pw(0.13)} strokeDasharray={`${pw(1)} ${pw(0.7)}`} />);
+      const a = ctx.T(g.path[1]), b = ctx.T(g.path[0]);
+      const dv = norm(sub(b, a)), pp = perpL(dv), h = pw(1.6);
+      nodes.push(<path key={`${st.id}bh`} d={`M${b.x} ${b.y}L${b.x - dv.x * h + pp.x * h * 0.45} ${b.y - dv.y * h + pp.y * h * 0.45}L${b.x - dv.x * h - pp.x * h * 0.45} ${b.y - dv.y * h - pp.y * h * 0.45}Z`} fill={col} />);
+      nodes.push(<Txt key={`${st.id}bd`} p={g.path[g.path.length - 1]} ctx={ctx} size={1.8} color={col}>{'ירידה'}</Txt>);
+    }
+  }
+
   // Furniture (under the walls' outline so that items touching walls look tidy).
   if (showFurn) for (const f of dd.furniture.filter((x) => x.levelId === levelId && inState(x.phase, state, ren))) {
     const ps = phaseStyle(f.phase, state, ren);
@@ -261,11 +278,14 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
     if (s.mode === 'elevation') {
       // An elevation: one arrow in the middle, pointing at the building, with its name behind it.
       const m = v2((a.x + b.x) / 2, (a.y + b.y) / 2);
+      // The name sits behind the arrow's tail, far enough that a long name on a vertical line does not cross it.
+      const fs = 2.6, tw = s.label.length * fs * 0.55;
+      const back = 1.5 + Math.abs(nn.x) * tw / 2 + Math.abs(nn.y) * fs * 0.7;
       nodes.push(
         <g key={`sec${s.id}`} data-el={s.id}>
           <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={col} strokeWidth={pw(0.2)} strokeDasharray={`${pw(1)} ${pw(1)}`} />
           {arrow(m, 'a1')}
-          <text x={m.x - nn.x * pw(3)} y={m.y - nn.y * pw(3)} fontSize={pw(2.6)} fontWeight={700} textAnchor="middle" dominantBaseline="middle" fill={col} fontFamily="Rubik, Arial, sans-serif" direction="rtl">{s.label}</text>
+          <text x={m.x - nn.x * pw(back)} y={m.y - nn.y * pw(back)} fontSize={pw(fs)} fontWeight={700} textAnchor="middle" dominantBaseline="middle" fill={col} fontFamily="Rubik, Arial, sans-serif" direction="rtl">{s.label}</text>
         </g>,
       );
       continue;

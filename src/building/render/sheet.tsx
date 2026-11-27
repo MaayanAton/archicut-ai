@@ -365,8 +365,13 @@ export function autoBSheet(d: BuildingData, base: Omit<BSheet, 'items'>, ids: ()
     const h = rowH(pBoxes, sc, TITLE_GAP + 10) + secRows(sc).reduce((a, r) => a + rowH(r, sc, TITLE_GAP + 6), 0);
     if (rowW(pBoxes, sc) <= avail.w && h <= avail.h) { scale = sc; break; }
   }
-  const right = area.x + area.w;
-  let x = right, y = area.y + 3;
+  // Rows centred in the space beside the side column, and the whole block centred vertically.
+  const left = area.x + side + 6, right = area.x + area.w;
+  const cx = (left + right) / 2;
+  const sRows = secRows(scale);
+  const blockH = rowH(pBoxes, scale, TITLE_GAP + 10) + sRows.reduce((a, r) => a + rowH(r, scale, TITLE_GAP + 6), 0);
+  let y = area.y + 3 + Math.max(0, (area.h - 6 - blockH) / 2);
+  let x = cx + rowW(pBoxes, scale) / 2;
   plans.forEach((p, i) => {
     const b = pBoxes[i];
     x -= boxW(b) / scale;
@@ -375,8 +380,8 @@ export function autoBSheet(d: BuildingData, base: Omit<BSheet, 'items'>, ids: ()
   });
   y += rowH(pBoxes, scale, TITLE_GAP + 10);
   let si = 0;
-  for (const row of secRows(scale)) {
-    x = right;
+  for (const row of sRows) {
+    x = cx + rowW(row, scale) / 2;
     for (const b of row) {
       const sec = secs[si++];
       if (!b) continue;

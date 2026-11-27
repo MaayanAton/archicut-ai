@@ -130,7 +130,7 @@ export function demoApartment(id: Id): BuildingData {
   b.furn('rug', 2700, 2400, 0);
   b.furn('sofa-3', 2700, 3480, 0, { color: '#6f7d8c' });
   b.furn('coffee-table', 2700, 2350, 0);
-  b.furn('armchair', 4600, 2300, -90, { color: '#b0773f' });
+  b.furn('armchair', 1000, 2250, 90, { color: '#b0773f' });
   b.furn('tv-unit', 2875, 500, 180);
   b.furn('plant', 650, 650, 0);
   b.furn('dining-table', 6700, 2100, 0);
@@ -162,7 +162,7 @@ export function demoApartment(id: Id): BuildingData {
   b.furn('bookcase', 11570, 5100, -90, { w: 1000 });
   b.section('A', v2(2500, -1500), v2(2500, 9000), 1, 15000);
   b.elevations(['south']);
-  b.sheet('גיליון 1 – תוכנית וחתך', 'A3', 'דירה מעוצבת – הדגמה לימודית');
+  b.sheet('גיליון 1 – תוכנית, חתך וחזית', 'A2', 'דירה מעוצבת – הדגמה לימודית');
   return b.d;
 }
 
@@ -274,7 +274,7 @@ export function demoRenovation(id: Id): BuildingData {
   b.room('חדר רחצה', v2(7400, 5200), 'ceramic', { state: 'existing' });
   b.room('סלון ומטבח פתוח', v2(4500, 1800), 'parquet', { state: 'proposed' });
   b.room('חדר שינה 2 (מורחב)', v2(5000, 5200), 'parquet', { state: 'proposed' });
-  b.room('חדר רחצה (חדש)', v2(8000, 5200), 'porcelain', { state: 'proposed' }, '#e3e7e8');
+  b.room('מקלחת', v2(8000, 5200), 'porcelain', { state: 'proposed' }, '#e3e7e8');
   b.room('חדר שינה 1', v2(1500, 5200), 'terrazzo');
   // Furniture: the old items are marked for removal, the new ones are added.
   b.furn('kitchen-base', 1450, 550, 180, { phase: 'existing' });
