@@ -263,9 +263,13 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
   if (o.dims && lm.gross.length) {
     let b = emptyBox();
     for (const g of lm.gross) for (const p of g) b = addPt(b, p);
+    // The dimension lines go outside anything that sticks out of the walls on this level (balconies, roof overhangs).
+    let e = b;
+    for (const s of dd.slabs.filter((x) => x.levelId === levelId)) for (const p of s.pts) e = addPt(e, p);
+    for (const r of lm.roofs) for (const p of r.g.outline) e = addPt(e, p);
     const off = 8 * ctx.pu / ctx.k;
-    nodes.push(<Dimension key="dimW" a={v2(b.minX, b.minY)} b={v2(b.maxX, b.minY)} offset={-off} ctx={ctx} color="#222" text={mToStr(b.maxX - b.minX, 2)} />);
-    nodes.push(<Dimension key="dimH" a={v2(b.maxX, b.minY)} b={v2(b.maxX, b.maxY)} offset={-off} ctx={ctx} color="#222" text={mToStr(b.maxY - b.minY, 2)} />);
+    nodes.push(<Dimension key="dimW" a={v2(b.minX, b.minY)} b={v2(b.maxX, b.minY)} offset={-(off + b.minY - e.minY)} ctx={ctx} color="#222" text={mToStr(b.maxX - b.minX, 2)} />);
+    nodes.push(<Dimension key="dimH" a={v2(b.maxX, b.minY)} b={v2(b.maxX, b.maxY)} offset={-(off + e.maxX - b.maxX)} ctx={ctx} color="#222" text={mToStr(b.maxY - b.minY, 2)} />);
   }
 
   // Section marks.
