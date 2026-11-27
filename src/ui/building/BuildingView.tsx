@@ -15,7 +15,7 @@ import { deleteIds, duplicateIds, elLevel, rotateIds, selectionCenter, translate
 import { PlanEditor, type SetB } from './PlanEditor';
 import {
   BModeToggle, BPanelAside, BackgroundPanel, FurnitureLibrary, HouseDialog, LevelsPanel, OpeningPalette, PropertiesPanel,
-  RenovationPanel, SettingsPanel, WallToolPanel, WarningsPanel, createRectHouse,
+  RenovationPanel, SettingsPanel, SiteLinkPanel, WallToolPanel, WarningsPanel, createRectHouse,
 } from './Panels';
 import { TablesTab } from './TablesTab';
 import { Building3D } from './Building3D';
@@ -171,6 +171,7 @@ export function BuildingView({ project }: { project: BProject }) {
               <RenovationPanel project={project} setData={setData} />
               <BackgroundPanel project={project} setData={setData} />
               <SettingsPanel project={project} setData={setData} />
+              <SiteLinkPanel project={project} />
             </>
           )}
         </>

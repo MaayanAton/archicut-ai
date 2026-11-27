@@ -289,6 +289,21 @@ const toastText = async (page) => (await page.locator('.toast').allInnerTexts())
     check(!/אזהרות/.test(await aside(page).innerText()), `${n} demo opens without warnings`);
     check(/הדגמה לימודי/.test(await aside(page).innerText()), `${n} demo is marked as educational`);
   }
+  // ---- controlled copy of the building outline into a site project ----
+  await openProject(page, 'פארק ציבורי לדוגמה');
+  const siteBefore = await page.locator('[data-testid="site-plan"] g[data-el]').count();
+  await openProject(page, 'בית פרטי דו־קומתי');
+  await page.locator('select[aria-label="קומה פעילה"]').first().selectOption({ label: 'קומת קרקע' }).catch(() => {});
+  await page.waitForTimeout(300);
+  check(/העתקה חד־פעמית/.test(await aside(page).innerText()), 'the copy to a site project explains that it is one-way and simplified');
+  await page.getByRole('combobox', { name: 'פרויקט תכנון אתר' }).selectOption({ label: 'הדגמה: פארק ציבורי לדוגמה' });
+  await page.getByRole('button', { name: 'העתקת קו המבנה לפרויקט האתר' }).click();
+  await page.waitForTimeout(300);
+  check(/הועתק לפרויקט/.test(await toastText(page)), 'the building outline is copied to the chosen site project');
+  await page.waitForTimeout(1200);
+  await openProject(page, 'פארק ציבורי לדוגמה');
+  check(await page.locator('[data-testid="site-plan"] g[data-el]').count() === siteBefore + 1, 'the site project has one more element (the building mass)');
+
   // ---- phone ----
   {
     const { chromium, devices } = require('playwright');

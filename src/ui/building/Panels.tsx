@@ -27,6 +27,7 @@ import { floorFinish, newRoom, newWall, WALL_DEFAULTS } from '../../building/fac
 import { roofFrame } from '../../building/roofs';
 import { furnitureSymbol } from '../../building/render/plan';
 import { AREA_EXPLAIN } from '../../building/quantities';
+import { buildingFootprints, copyBuildingToSite } from '../../building/toSite';
 import { setBldAdvanced, useBldUi } from './bldUi';
 import type { SetB } from './PlanEditor';
 
@@ -382,6 +383,38 @@ export function BackgroundPanel({ project, setData }: { project: BProject; setDa
           <div className="btns"><button className="btn primary" disabled={!pdf.page || busy} onClick={async () => { if (!pdf.page) return; setBusy(true); try { const { image } = await fileToImages(pdf.file, pdf.page); apply(pdf.file, image, pdf.page, pdf.count); setPdf(null); } catch (e) { toast(e instanceof UploadError ? e.message : 'לא ניתן לטעון את העמוד.'); } finally { setBusy(false); } }}>טעינה</button></div>
         </Dialog>
       )}
+    </div>
+  );
+}
+
+/** One-way copy of the building's outline into a site-planning project (the two projects stay independent). */
+export function SiteLinkPanel({ project }: { project: BProject }) {
+  const sites = useStore((s) => s.projects).filter((p): p is Extract<Project, { type: 'site' }> => p.type === 'site');
+  const [target, setTarget] = useState('');
+  const fps = useMemo(() => buildingFootprints(project.data), [project.data]);
+  if (!fps.length) return null;
+  const siteId = sites.some((p) => p.id === target) ? target : sites[0]?.id ?? '';
+  const copy = () => {
+    const site = sites.find((p) => p.id === siteId);
+    if (!site) return;
+    const r = copyBuildingToSite(site.data, project.data, project.name, uid);
+    if (!r.count) { toast('אין קו מתאר חיצוני סגור להעתקה.'); return; }
+    useStore.getState().update(site.id, (p) => (p.type === 'site' ? { ...p, data: r.data } : p));
+    toast(`קו המבנה הועתק לפרויקט "${site.name}" כאלמנט "מבנה"${r.moved ? ' במרכז המגרש' : ''}. אפשר להזיז ולסובב אותו שם.`);
+  };
+  return (
+    <div className="panel-section">
+      <h3>{Icons.tree} העתקה לתכנון אתר</h3>
+      <span className="small">גובה המעטפת: <b className="num">{fmtM(fps[0].height)}</b> · שטח ברוטו: <b className="num">{fmtArea(fps.reduce((a, f) => a + Math.abs(polyArea(f.pts)), 0))}</b></span>
+      {sites.length ? (
+        <>
+          <select className="input" value={siteId} onChange={(e) => setTarget(e.target.value)} aria-label="פרויקט תכנון אתר">
+            {sites.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button className="btn sm" onClick={copy}>{Icons.copy} העתקת קו המבנה לפרויקט האתר</button>
+        </>
+      ) : <span className="small muted">אין עדיין פרויקט "תכנון אדריכלי ומתחמים". אחרי שתיצרי אחד, אפשר להעתיק אליו את קו המבנה.</span>}
+      <span className="small muted">העתקה חד־פעמית: נוצר אלמנט "מבנה" פשוט (קו המתאר החיצוני של הקומה התחתונה, גובה הקירות וגג שטוח). שינויים בהמשך לא יתעדכנו שם, וגג משופע, פתחים ופנים המבנה אינם מועברים.</span>
     </div>
   );
 }

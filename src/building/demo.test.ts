@@ -76,3 +76,23 @@ describe('building demos', () => {
     expect(g.grossArea / 1e6).toBeCloseTo(90, 1);
   });
 });
+
+describe('copy to a site project', () => {
+  it('copies the outline of the lowest level as one site building, centred on the lot', async () => {
+    const { copyBuildingToSite, buildingFootprints } = await import('./toSite');
+    const { demoParkData } = await import('../site/demo');
+    const h = demoHouse(id);
+    const fps = buildingFootprints(h);
+    expect(fps.length).toBe(1);
+    expect(Math.abs(fps[0].pts.reduce((a, p, i, arr) => a + p.x * arr[(i + 1) % arr.length].y - arr[(i + 1) % arr.length].x * p.y, 0) / 2) / 1e6).toBeCloseTo(80, 1);
+    expect(fps[0].height).toBe(3000 + 2750);
+    const site = demoParkData(id);
+    const r = copyBuildingToSite(site, h, 'בית', id);
+    expect(r.count).toBe(1);
+    expect(r.data.elements.length).toBe(site.elements.length + 1);
+    const el = r.data.elements[r.data.elements.length - 1];
+    expect(el.kind).toBe('building');
+    expect(el.params.h).toBe(5750);
+    expect(site.elements.length).toBe(r.data.elements.length - 1); // the original site data is not changed
+  });
+});
