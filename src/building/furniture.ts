@@ -4,21 +4,51 @@
 // with the FRONT at -d/2 and the back at +d/2, z up from the item's bottom. Sizes are common catalogue sizes,
 // offered as editable defaults.
 
-export type PartColor = 1 | 2 | 'metal' | 'glass' | 'white' | 'dark' | 'light';
+import { matchesQuery } from '../materials/catalog';
+import { FURNITURE4 } from './furniture4';
+
+/** Colour of a part: the item's colours 1, 2 (and 3 in 4.0) or a fixed look. 'lamp' glows when the light is on. */
+export type PartColor = 1 | 2 | 3 | 'metal' | 'glass' | 'white' | 'dark' | 'light' | 'lamp' | 'leaf' | 'water' | 'gold' | 'soil';
 
 export type Part =
   | { t: 'box'; x0: number; y0: number; x1: number; y1: number; z0: number; z1: number; c: PartColor }
-  | { t: 'cyl'; cx: number; cy: number; r: number; z0: number; z1: number; c: PartColor };
+  | { t: 'cyl'; cx: number; cy: number; r: number; z0: number; z1: number; c: PartColor }
+  /** 4.0: a box whose bottom and top change linearly along local x (za at x0 → zb at x1): arches, vaults, slopes. */
+  | { t: 'slice'; x0: number; x1: number; y0: number; y1: number; b0: number; b1: number; t0: number; t1: number; c: PartColor }
+  /** 4.0: a prism over any polygon (local x, y pairs): wedges of spiral stairs, rounded shapes. */
+  | { t: 'poly'; pts: [number, number][]; z0: number; z1: number; c: PartColor };
 
-export type FurnCategory = 'living' | 'bedroom' | 'kitchen' | 'bath' | 'other';
+/** Highest point of a part. */
+export const partTop = (p: Part) => (p.t === 'slice' ? Math.max(p.t0, p.t1) : p.z1);
+export const partBottom = (p: Part) => (p.t === 'slice' ? Math.min(p.b0, p.b1) : p.z0);
+
+export type FurnCategory = 'living' | 'bedroom' | 'kitchen' | 'bath' | 'office' | 'decor' | 'lighting' | 'arch' | 'safe' | 'other';
 
 export const FURN_CATEGORIES: { id: FurnCategory; label: string }[] = [
   { id: 'living', label: 'סלון' },
   { id: 'bedroom', label: 'חדרי שינה' },
   { id: 'kitchen', label: 'מטבח ופינת אוכל' },
-  { id: 'bath', label: 'חדרי רחצה' },
+  { id: 'bath', label: 'חדרי רחצה וכביסה' },
+  { id: 'office', label: 'עבודה ולימוד' },
+  { id: 'decor', label: 'אקססוריז ופריטי נוי' },
+  { id: 'lighting', label: 'תאורה' },
+  { id: 'arch', label: 'אלמנטים אדריכליים' },
+  { id: 'safe', label: 'מרחב מוגן (להמחשה)' },
   { id: 'other', label: 'אלמנטים נוספים' },
 ];
+
+/** Rooms used by the library filter. */
+export type RoomTag = 'living' | 'bedroom' | 'kids' | 'kitchen' | 'dining' | 'bath' | 'office' | 'hall' | 'any';
+export const ROOM_TAGS: { id: RoomTag; label: string }[] = [
+  { id: 'living', label: 'סלון' }, { id: 'bedroom', label: 'חדר שינה' }, { id: 'kids', label: 'חדר ילדים' }, { id: 'kitchen', label: 'מטבח' },
+  { id: 'dining', label: 'פינת אוכל' }, { id: 'bath', label: 'חדר רחצה' }, { id: 'office', label: 'חדר עבודה' }, { id: 'hall', label: 'כניסה ומסדרון' },
+];
+
+/** Where an item is placed: on the floor, on a wall, on top of another item, or under the ceiling. */
+export type Mount = 'floor' | 'wall' | 'surface' | 'ceiling';
+
+/** A light fitting (4.0). decorative = drawn only, does not light the 3D scene. z = height of the light point in the item, mm. */
+export interface LightDef { type: 'point' | 'spot' | 'strip'; z: number; power: number; decorative?: boolean }
 
 export interface FurnItem {
   kind: string;
@@ -37,6 +67,22 @@ export interface FurnItem {
   lines?: (w: number, d: number) => [number, number, number, number][];
   /** Drawn dashed in plan (items above eye level, such as upper cabinets). */
   above?: boolean;
+  /** 4.0 */
+  sub?: string;
+  rooms?: RoomTag[];
+  mount?: Mount;
+  /** Names of the colour / material slots (default: ראשי, משני). */
+  slots?: string[];
+  color3?: string;
+  /** Default materials of the slots (4.0 items). */
+  mats?: (string | null)[];
+  light?: LightDef;
+  /** Plan drawn as a cut at 1.20 m: parts that start above it are dashed (gates, arches, canopies). */
+  cut?: boolean;
+  /** Note shown in the properties (for illustration only...). */
+  note?: string;
+  /** Item is new in 4.0. */
+  v4?: boolean;
 }
 
 const box = (x0: number, y0: number, x1: number, y1: number, z0: number, z1: number, c: PartColor = 1): Part => ({ t: 'box', x0, y0, x1, y1, z0, z1, c });
@@ -104,7 +150,7 @@ const doorLines = (w: number, d: number, n: number): [number, number, number, nu
   return out;
 };
 
-export const FURNITURE: FurnItem[] = [
+const BASE_FURNITURE: FurnItem[] = [
   // ---- living room ----
   { kind: 'sofa-3', label: 'ספה תלת־מושבית', cat: 'living', keywords: 'ספה סלון sofa', w: 2200, d: 900, h: 850, elev: 0, color: '#8a9aa5', color2: '#6b7a84', material: 'fabric', parts: sofa },
   { kind: 'sofa-2', label: 'ספה דו־מושבית', cat: 'living', keywords: 'ספה סלון loveseat', w: 1600, d: 900, h: 850, elev: 0, color: '#8a9aa5', color2: '#6b7a84', material: 'fabric', parts: sofa },
@@ -154,23 +200,32 @@ export const FURNITURE: FurnItem[] = [
   { kind: 'partition', label: 'מחיצה דקורטיבית', cat: 'other', keywords: 'מחיצה פרגוד', w: 1500, d: 60, h: 1800, elev: 0, color: '#d8c6a5', color2: '#a9784a', material: 'wood', parts: (w, d, h) => [box(-w / 2, -d / 2, w / 2, d / 2, 0, h, 1)] },
 ];
 
+/** The whole catalogue: the 3.0 items (unchanged) and the 4.0 items. */
+export const FURNITURE: FurnItem[] = [...BASE_FURNITURE, ...FURNITURE4];
+
 const BY_KIND = new Map(FURNITURE.map((f) => [f.kind, f]));
 const UNKNOWN: FurnItem = { kind: 'unknown', label: 'פריט לא מוכר', cat: 'other', keywords: '', w: 500, d: 500, h: 500, elev: 0, color: '#999999', color2: '#777777', material: 'paint', parts: (w, d, h) => [box(-w / 2, -d / 2, w / 2, d / 2, 0, h, 1)] };
 export const furn = (kind: string): FurnItem => BY_KIND.get(kind) ?? UNKNOWN;
 export const isKnownFurniture = (kind: string) => BY_KIND.has(kind);
 
 /** Search by Hebrew label or keyword (any word of the query). */
+/** Search by Hebrew label, keyword or category, with common synonyms (כורסה / כורסא, ארון / ארונות...). */
 export function searchFurniture(q: string): FurnItem[] {
-  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return FURNITURE;
-  return FURNITURE.filter((f) => words.every((w) => `${f.label} ${f.keywords}`.toLowerCase().includes(w)));
+  if (!q.trim()) return FURNITURE;
+  return FURNITURE.filter((f) => matchesQuery(`${f.label} ${f.keywords} ${f.sub ?? ''} ${FURN_CATEGORIES.find((c) => c.id === f.cat)?.label ?? ''}`, q));
 }
 
 /** Resolves a part colour to a hex colour for an item. */
-export function partColor(c: PartColor, color: string, color2: string): string {
+export function partColor(c: PartColor, color: string, color2: string, color3?: string): string {
   switch (c) {
     case 1: return color;
     case 2: return color2;
+    case 3: return color3 ?? color2;
+    case 'lamp': return '#fff3c8';
+    case 'leaf': return '#5b8f4a';
+    case 'water': return '#7fb6d9';
+    case 'gold': return '#c9a55a';
+    case 'soil': return '#6b4f36';
     case 'metal': return '#9aa1a8';
     case 'glass': return '#a9cde0';
     case 'white': return '#fbfbfa';

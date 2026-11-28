@@ -1,8 +1,9 @@
 // Creating new elements with the default sizes the interface shows (all editable).
 
 import { type Vec2, v2 } from '../geometry/vec';
-import type { BuildingData, Column, Beam, FloorFinish, Furniture, Level, Opening, OpeningKind, Phase, Roof, Room, Slab, SlabKind, Stair, Wall, WallKind } from './types';
-import { openingDef } from './openings';
+import type { BuildingData, Column, Beam, FloorFinish, FloorZone, Furniture, Level, Opening, OpeningKind, Phase, Roof, Room, Slab, SlabKind, Stair, Wall, WallKind, WallZone, Finish } from './types';
+import { openingDef, type OpeningPreset } from './openings';
+import { richFinish } from '../materials/finish';
 import { furn } from './furniture';
 import { material } from './materials';
 import { sortedLevels } from './model';
@@ -40,7 +41,36 @@ export function newRoom(id: string, levelId: string, name: string, seed: Vec2, o
 
 export function newFurniture(id: string, levelId: string, kind: string, p: Vec2, rot = 0, phase: Phase = 'new', o: Partial<Furniture> = {}): Furniture {
   const f = furn(kind);
-  return { id, levelId, kind, name: '', p, rot, w: f.w, d: f.d, h: f.h, elev: f.elev, color: f.color, color2: f.color2, material: f.material, phase, ...o };
+  // 4.0 items come with their third colour, the materials of their parts and, for lights, a light that is on.
+  const extra: Partial<Furniture> = {
+    ...(f.color3 ? { color3: f.color3 } : {}),
+    ...(f.mats ? { mats: f.mats.slice() } : {}),
+    ...(f.light ? { light: { on: true, dim: 1, temp: 'warm' } } : {}),
+  };
+  return { id, levelId, kind, name: '', p, rot, w: f.w, d: f.d, h: f.h, elev: f.elev, color: f.color, color2: f.color2, material: f.material, phase, ...extra, ...o };
+}
+
+/** 4.0: a floor finish of a catalogue material with its texture settings (planks, tiles, joints). */
+export function richFloor(materialId: string, color?: string, angle = 0): FloorFinish {
+  const r = richFinish(materialId, color);
+  return { material: r.material, color: r.color, v: 4, color2: r.color2, tileW: r.tw, tileH: r.th, angle, ...(r.layout ? { layout: r.layout } : {}), ...(r.grout ? { grout: r.grout } : {}), ...(r.groutW !== undefined ? { groutW: r.groutW } : {}) };
+}
+
+/** 4.0: a wall finish of a catalogue material. */
+export const richWall = (materialId: string, color?: string): Finish => richFinish(materialId, color);
+
+export const newFloorZone = (id: string, levelId: string, pts: Vec2[], floor: FloorFinish, name = 'אזור רצפה'): FloorZone => ({ id, levelId, name, pts, floor });
+
+export const newWallZone = (id: string, side: 'L' | 'R', finish: Finish, o: Partial<WallZone> = {}): WallZone => ({ id, side, s0: null, s1: null, z0: 0, z1: 1200, finish, ...o });
+
+/** 4.0: an opening made from a designed preset (arched door, round window...). */
+export function presetOpening(id: string, wallId: string, pr: OpeningPreset, pos: number, o: { phase?: Phase; side?: 'L' | 'R'; hinge?: 'start' | 'end' } = {}): Opening {
+  const base = newOpening(id, wallId, pr.kind, pos, { width: pr.w, height: pr.h, sill: pr.sill, phase: o.phase, side: o.side, hinge: o.hinge });
+  return {
+    ...base, color: pr.color ?? base.color, preset: pr.id,
+    ...(pr.shape && pr.shape !== 'rect' ? { shape: pr.shape } : {}), ...(pr.variant ? { variant: pr.variant } : {}), ...(pr.rise ? { rise: pr.rise } : {}),
+    ...(pr.leaf ? { leaf: pr.leaf } : {}), ...(pr.glass ? { glass: pr.glass } : {}), ...(pr.depth ? { depth: pr.depth } : {}),
+  };
 }
 
 /** Height to the next level above (floor to floor), or the level's ceiling height plus its slab. */

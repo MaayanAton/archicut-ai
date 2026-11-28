@@ -68,6 +68,7 @@ export function renderBSection(r: BSectionResult, ctx: ViewCtx, o: BSecOpts): Re
     const line = isHl ? '#e8590c' : '#111';
     if (role === 'glass' || role === 'railing') { list.forEach((c, i) => light.push(<path key={`g${gi}-${i}`} d={d(c.poly)} fill={bw ? '#fff' : '#cfe3ee'} stroke={line} strokeWidth={lw(0.18)} />)); continue; }
     if (role === 'frame' || role === 'leaf') { list.forEach((c, i) => light.push(<path key={`l${gi}-${i}`} d={d(c.poly)} fill={bw ? '#fff' : tone(c.color, 0.3)} stroke={line} strokeWidth={lw(0.2)} />)); continue; }
+    if (role === 'finish') { list.forEach((c, i) => light.push(<path key={`w${gi}-${i}`} d={d(c.poly)} fill={bw ? '#fff' : tone(c.color, 0.15)} stroke={line} strokeWidth={lw(0.12)} />)); continue; }
     if (type === 'furniture') { list.forEach((c, i) => light.push(<path key={`f${gi}-${i}`} d={d(c.poly)} fill={bw ? '#fff' : tone(c.color, 0.25)} stroke={line} strokeWidth={lw(0.25)} />)); continue; }
     const fill = bw ? '#3a3a3a' : role === 'roof' ? '#6d5a48' : role === 'stair' ? '#6f6a63' : role === 'slab' || role === 'ceiling' ? '#5d5f63' : '#4a4d52';
     list.forEach((c, i) => structure.push(<path key={`o${gi}-${i}`} d={d(c.poly)} fill="none" stroke={line} strokeWidth={lw(0.5) * 2} strokeLinejoin="round" />));

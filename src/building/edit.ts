@@ -5,24 +5,24 @@ import { type Vec2, v2 } from '../geometry/vec';
 import { add, closestOnSegment, dist, dot, norm, pointInPoly, rotatePt, sub } from '../site/poly';
 import type { Annotation, BuildingData, Furniture, Opening, Phase, Room, Wall } from './types';
 import type { BuildingModel } from './model';
-import { columnOutline, furnitureOutline } from './model';
+import { columnOutline, furnitureOutline, shownEl } from './model';
 import { stairGeom } from './stairs';
 import { fitOpening, wallLength } from './openings';
 
-export type ElType = 'wall' | 'opening' | 'room' | 'furniture' | 'stair' | 'column' | 'beam' | 'slab' | 'roof' | 'annotation';
+export type ElType = 'wall' | 'opening' | 'room' | 'furniture' | 'stair' | 'column' | 'beam' | 'slab' | 'roof' | 'annotation' | 'floorZone';
 
 export const EL_LABELS: Record<ElType, string> = {
-  wall: 'קיר', opening: 'פתח', room: 'חדר', furniture: 'ריהוט', stair: 'מדרגות', column: 'עמוד', beam: 'קורה', slab: 'רצפה / מרפסת', roof: 'גג', annotation: 'הערה',
+  wall: 'קיר', opening: 'פתח', room: 'חדר', furniture: 'ריהוט', stair: 'מדרגות', column: 'עמוד', beam: 'קורה', slab: 'רצפה / מרפסת', roof: 'גג', annotation: 'הערה', floorZone: 'אזור רצפה',
 };
 
 const LISTS: [ElType, keyof BuildingData][] = [
   ['wall', 'walls'], ['opening', 'openings'], ['room', 'rooms'], ['furniture', 'furniture'], ['stair', 'stairs'], ['column', 'columns'],
-  ['beam', 'beams'], ['slab', 'slabs'], ['roof', 'roofs'], ['annotation', 'annotations'],
+  ['beam', 'beams'], ['slab', 'slabs'], ['roof', 'roofs'], ['annotation', 'annotations'], ['floorZone', 'floorZones'],
 ];
 
 export function findEl(d: BuildingData, id: string): { type: ElType; el: { id: string } } | null {
   for (const [t, k] of LISTS) {
-    const el = (d[k] as { id: string }[]).find((x) => x.id === id);
+    const el = ((d[k] ?? []) as { id: string }[]).find((x) => x.id === id);
     if (el) return { type: t, el };
   }
   return null;
@@ -36,12 +36,25 @@ export function elLevel(d: BuildingData, id: string): string | null {
   return (f.el as unknown as { levelId: string }).levelId;
 }
 
+/** Is an element locked (by itself or by its layer)? Locked elements are not moved, rotated or deleted. */
+export function isLocked(d: BuildingData, id: string): boolean {
+  const f = findEl(d, id);
+  if (!f) return false;
+  const e = f.el as { locked?: boolean; layer?: string };
+  if (e.locked) return true;
+  return !!e.layer && !!d.layers?.some((l) => l.id === e.layer && l.locked);
+}
+
+/** The ids that ordinary editing may change (locked ones left out). */
+export const unlockedIds = (d: BuildingData, ids: string[]) => ids.filter((id) => !isLocked(d, id));
+
 const mv = (p: Vec2, dv: Vec2) => v2(p.x + dv.x, p.y + dv.y);
 const mvPts = (pts: Vec2[], dv: Vec2) => pts.map((p) => mv(p, dv));
 
 /** Moves elements. Walls that touch a moved wall stretch with it, so joints stay closed. */
 export function translateIds(d: BuildingData, ids: string[], dv: Vec2): BuildingData {
-  const set = new Set(ids);
+  const set = new Set(unlockedIds(d, ids));
+  if (!set.size) return d;
   const movedEnds: Vec2[] = [];
   for (const w of d.walls) if (set.has(w.id)) movedEnds.push(w.a, w.b);
   const near = (p: Vec2) => movedEnds.some((q) => dist(p, q) < 5);
@@ -49,6 +62,7 @@ export function translateIds(d: BuildingData, ids: string[], dv: Vec2): Building
     ...d,
     walls: d.walls.map((w) => {
       if (set.has(w.id)) return { ...w, a: mv(w.a, dv), b: mv(w.b, dv) };
+      if (w.locked) return w;
       const ma = near(w.a), mb = near(w.b);
       if (!ma && !mb) return w;
       return { ...w, a: ma ? mv(w.a, dv) : w.a, b: mb ? mv(w.b, dv) : w.b };
@@ -61,6 +75,7 @@ export function translateIds(d: BuildingData, ids: string[], dv: Vec2): Building
     slabs: d.slabs.map((s) => (set.has(s.id) ? { ...s, pts: mvPts(s.pts, dv) } : s)),
     roofs: d.roofs.map((r) => (set.has(r.id) ? { ...r, pts: mvPts(r.pts, dv) } : r)),
     annotations: d.annotations.map((a) => (set.has(a.id) ? (a.type === 'dim' ? { ...a, a: mv(a.a, dv), b: mv(a.b, dv) } : { ...a, p: mv(a.p, dv) }) : a)),
+    ...(d.floorZones ? { floorZones: d.floorZones.map((z) => (set.has(z.id) ? { ...z, pts: mvPts(z.pts, dv) } : z)) } : {}),
   };
 }
 
@@ -77,7 +92,7 @@ function keepOpenings(d: BuildingData, old: Wall, nw: Wall): Opening[] {
 /** Moves one end of a wall; the ends of other walls at the same point follow. */
 export function moveWallEnd(d: BuildingData, wallId: string, end: 'a' | 'b', p: Vec2): BuildingData {
   const w = d.walls.find((x) => x.id === wallId);
-  if (!w) return d;
+  if (!w || isLocked(d, wallId)) return d;
   const old = w[end];
   let openings = d.openings;
   const walls = d.walls.map((x) => {
@@ -92,7 +107,8 @@ export function moveWallEnd(d: BuildingData, wallId: string, end: 'a' | 'b', p: 
 }
 
 export function rotateIds(d: BuildingData, ids: string[], deg: number, c: Vec2): BuildingData {
-  const set = new Set(ids);
+  const set = new Set(unlockedIds(d, ids));
+  if (!set.size) return d;
   const R = (p: Vec2) => rotatePt(p, deg, c);
   return {
     ...d,
@@ -105,6 +121,7 @@ export function rotateIds(d: BuildingData, ids: string[], deg: number, c: Vec2):
     slabs: d.slabs.map((s) => (set.has(s.id) ? { ...s, pts: s.pts.map(R) } : s)),
     roofs: d.roofs.map((r) => (set.has(r.id) ? { ...r, pts: r.pts.map(R) } : r)),
     annotations: d.annotations.map((a) => (set.has(a.id) ? (a.type === 'dim' ? { ...a, a: R(a.a), b: R(a.b) } : { ...a, p: R(a.p) }) : a)),
+    ...(d.floorZones ? { floorZones: d.floorZones.map((z) => (set.has(z.id) ? { ...z, pts: z.pts.map(R) } : z)) } : {}),
   };
 }
 
@@ -130,18 +147,26 @@ export function duplicateIds(d: BuildingData, ids: string[], dv: Vec2, newId: ()
     slabs: [...d.slabs, ...copy(d.slabs).map((s) => ({ ...s, pts: mvPts(s.pts, dv) }))],
     roofs: [...d.roofs, ...copy(d.roofs).map((r) => ({ ...r, pts: mvPts(r.pts, dv) }))],
     annotations: [...d.annotations, ...copy(d.annotations).map((a) => (a.type === 'dim' ? { ...a, a: mv(a.a, dv), b: mv(a.b, dv) } : { ...a, p: mv(a.p, dv) }) as Annotation)],
+    ...(d.floorZones ? { floorZones: [...d.floorZones, ...copy(d.floorZones).map((z) => ({ ...z, name: `${z.name} (עותק)`, pts: mvPts(z.pts, dv) }))] } : {}),
   };
+  // Copies are never locked (the original may be).
+  for (const k of ['walls', 'rooms', 'furniture', 'stairs', 'columns', 'beams', 'slabs', 'roofs', 'annotations', 'floorZones'] as const) {
+    const list = data[k] as { id: string; locked?: boolean }[] | undefined;
+    if (list) for (const x of list) if (x.locked && [...map.values()].includes(x.id)) delete x.locked;
+  }
   return { data, ids: [...map.values()] };
 }
 
 /** Deletes elements; deleting a wall deletes its openings. */
 export function deleteIds(d: BuildingData, ids: string[]): BuildingData {
-  const set = new Set(ids);
+  const set = new Set(unlockedIds(d, ids));
+  if (!set.size) return d;
   const f = <T extends { id: string }>(l: T[]) => l.filter((x) => !set.has(x.id));
   return {
     ...d,
     walls: f(d.walls), openings: d.openings.filter((o) => !set.has(o.id) && !set.has(o.wallId)), rooms: f(d.rooms), furniture: f(d.furniture),
     stairs: f(d.stairs), columns: f(d.columns), beams: f(d.beams), slabs: f(d.slabs), roofs: f(d.roofs), annotations: f(d.annotations),
+    ...(d.floorZones ? { floorZones: f(d.floorZones) } : {}),
   };
 }
 
@@ -156,7 +181,8 @@ export function setPhase(d: BuildingData, ids: string[], phase: Phase): Building
 export function hitTest(d: BuildingData, m: BuildingModel, levelId: string, p: Vec2, tol: number, opts: { roofs?: boolean } = {}): string | null {
   const lm = m.levels.find((l) => l.level.id === levelId);
   if (!lm) return null;
-  for (const a of d.annotations.filter((x) => x.levelId === levelId)) {
+  const vis = <T extends { levelId: string; hidden?: boolean; layer?: string }>(x: T) => x.levelId === levelId && shownEl(d, x);
+  for (const a of d.annotations.filter(vis)) {
     if (a.type === 'text' && dist(a.p, p) < Math.max(tol * 2, a.size * 60)) return a.id;
     if (a.type === 'dim' && closestOnSegment(p, a.a, a.b).d < tol + Math.abs(a.offset)) {
       const n = norm(v2(-(a.b.y - a.a.y), a.b.x - a.a.x));
@@ -169,16 +195,17 @@ export function hitTest(d: BuildingData, m: BuildingModel, levelId: string, p: V
     const q = sub(p, c);
     if (Math.abs(dot(q, om.u)) <= om.o.width / 2 && Math.abs(dot(q, om.n)) <= wm.w.thickness / 2 + tol) return om.o.id;
   }
-  const furnHere = d.furniture.filter((f) => f.levelId === levelId).sort((a, b) => a.w * a.d - b.w * b.d);
+  const furnHere = d.furniture.filter(vis).sort((a, b) => a.w * a.d - b.w * b.d);
   for (const f of furnHere) if (pointInPoly(p, furnitureOutline(f))) return f.id;
-  for (const c of d.columns.filter((x) => x.levelId === levelId)) if (c.round ? dist(p, c.p) <= c.w / 2 + tol : pointInPoly(p, columnOutline(c))) return c.id;
-  for (const s of d.stairs.filter((x) => x.levelId === levelId)) { const g = stairGeom(s); if (g.outline.length && pointInPoly(p, g.outline)) return s.id; }
+  for (const c of d.columns.filter(vis)) if (c.round ? dist(p, c.p) <= c.w / 2 + tol : pointInPoly(p, columnOutline(c))) return c.id;
+  for (const s of d.stairs.filter(vis)) { const g = stairGeom(s); if (g.outline.length && pointInPoly(p, g.outline)) return s.id; }
   for (const wm of lm.walls) if (pointInPoly(p, wm.outline) || closestOnSegment(p, wm.w.a, wm.w.b).d < Math.max(tol, wm.w.thickness / 2)) return wm.w.id;
-  for (const b of d.beams.filter((x) => x.levelId === levelId)) if (closestOnSegment(p, b.a, b.b).d < b.w / 2 + tol) return b.id;
-  if (opts.roofs) for (const r of d.roofs.filter((x) => x.levelId === levelId)) if (r.pts.length >= 3 && pointInPoly(p, r.pts)) return r.id;
+  for (const b of d.beams.filter(vis)) if (closestOnSegment(p, b.a, b.b).d < b.w / 2 + tol) return b.id;
+  if (opts.roofs) for (const r of d.roofs.filter(vis)) if (r.pts.length >= 3 && pointInPoly(p, r.pts)) return r.id;
+  for (const z of (d.floorZones ?? []).filter(vis)) if (z.pts.length >= 3 && pointInPoly(p, z.pts)) return z.id;
   for (const r of lm.rooms) if (r.net && pointInPoly(p, r.net)) return r.room.id;
-  for (const s of d.slabs.filter((x) => x.levelId === levelId)) if (s.pts.length >= 3 && pointInPoly(p, s.pts)) return s.id;
-  if (!opts.roofs) for (const r of d.roofs.filter((x) => x.levelId === levelId)) if (r.pts.length >= 3 && pointInPoly(p, r.pts)) return r.id;
+  for (const s of d.slabs.filter(vis)) if (s.pts.length >= 3 && pointInPoly(p, s.pts)) return s.id;
+  if (!opts.roofs) for (const r of d.roofs.filter(vis)) if (r.pts.length >= 3 && pointInPoly(p, r.pts)) return r.id;
   return null;
 }
 
@@ -268,7 +295,7 @@ export function selectionCenter(d: BuildingData, ids: string[]): Vec2 {
     if (f.type === 'wall' || f.type === 'beam') pts.push((e as unknown as Wall).a, (e as unknown as Wall).b);
     else if (f.type === 'furniture' || f.type === 'stair' || f.type === 'column') pts.push((e as unknown as Furniture).p);
     else if (f.type === 'room') pts.push((e as unknown as Room).seed);
-    else if (f.type === 'slab' || f.type === 'roof') pts.push(...(e.pts as Vec2[]));
+    else if (f.type === 'slab' || f.type === 'roof' || f.type === 'floorZone') pts.push(...(e.pts as Vec2[]));
     else if (f.type === 'annotation') { const a = e as unknown as Annotation; if (a.type === 'dim') pts.push(a.a, a.b); else pts.push(a.p); }
   }
   if (!pts.length) return v2(0, 0);

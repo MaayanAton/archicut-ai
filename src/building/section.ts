@@ -105,6 +105,13 @@ function beyondPrim(f: Frame, pr: BPrim, depth: number, from: number): { poly: S
   return { poly: hull.map((q) => ({ s: q.x, z: q.y })), depth: Math.max(0, dc - pr.r) };
 }
 
+/** 4.0: a wall with designed faces shows, in elevations, the colour of the face that looks at the viewer. */
+function faceColor(pr: BPrim, f: Frame): string {
+  if (pr.t !== 'prism' || !pr.sideTex || !pr.side) return pr.color;
+  const k = dot(pr.sideTex.n, f.n);
+  return k < -0.3 ? pr.side.L : k > 0.3 ? pr.side.R : pr.color;
+}
+
 export function computeBSection(d: BuildingData, m: BuildingModel, sec: BldSection): BSectionResult | null {
   const f = frameOf(sec);
   if (f.L < 1) return null;
@@ -123,7 +130,7 @@ export function computeBSection(d: BuildingData, m: BuildingModel, sec: BldSecti
       }
       // Beyond: what lies behind the plane (for a section, starting just behind the cut).
       const b = beyondPrim(f, pr, depth, isSection ? 0.5 : -1e9);
-      if (b) beyond.push({ id: so.id, type: so.type, role: pr.role, color: pr.color, poly: b.poly, depth: b.depth });
+      if (b) beyond.push({ id: so.id, type: so.type, role: pr.role, color: faceColor(pr, f), poly: b.poly, depth: b.depth });
     }
   }
   beyond.sort((p, q) => q.depth - p.depth);

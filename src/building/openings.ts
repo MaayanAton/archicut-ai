@@ -1,6 +1,6 @@
 // Doors and windows: kinds, default sizes and the checks that keep an opening inside its wall.
 
-import type { Opening, OpeningKind, Phase, Wall } from './types';
+import type { Opening, OpeningKind, OpeningShape, OpeningVariant, Phase, Wall } from './types';
 
 export interface OpeningDef {
   kind: OpeningKind;
@@ -29,6 +29,61 @@ export const OPENINGS: OpeningDef[] = [
   { kind: 'vitrine', label: 'ויטרינה', door: false, style: 'window-sliding', glass: true, w: 3000, h: 2300, sill: 0, color: '#3a3f45', material: 'aluminium' },
 ];
 
+/**
+ * 4.0: designed doors and windows. Each is stored as a 3.0 kind plus a shape and a variant, so a project saved in 4.0
+ * still opens in 3.0 (with a rectangular opening of the same size). Curved shapes cut a real curved hole in the wall.
+ */
+export interface OpeningPreset {
+  id: string; label: string; group: 'דלתות' | 'חלונות' | 'מעברים ונישות';
+  kind: OpeningKind; shape?: OpeningShape; variant?: OpeningVariant; rise?: number; depth?: number;
+  w: number; h: number; sill: number; color?: string; leaf?: string; glass?: string; note?: string;
+}
+
+export const OPENING_PRESETS: OpeningPreset[] = [
+  // Doors
+  { id: 'door-wood', label: 'דלת עץ', group: 'דלתות', kind: 'door', w: 900, h: 2100, sill: 0, color: '#8a5a3b', leaf: '#9b6a45' },
+  { id: 'door-white', label: 'דלת פנים לבנה', group: 'דלתות', kind: 'door', w: 800, h: 2100, sill: 0, color: '#f5f5f2' },
+  { id: 'door-metal', label: 'דלת מתכת', group: 'דלתות', kind: 'door', variant: 'metal', w: 900, h: 2100, sill: 0, color: '#4a4f55', leaf: '#5d6268' },
+  { id: 'door-glass-alu', label: 'דלת זכוכית במסגרת אלומיניום', group: 'דלתות', kind: 'door-glass', w: 1000, h: 2200, sill: 0, color: '#3a3f45' },
+  { id: 'door-entry-wood', label: 'דלת כניסה מעץ', group: 'דלתות', kind: 'door-entry', w: 1000, h: 2200, sill: 0, color: '#5f4632', leaf: '#6b4a33' },
+  { id: 'door-entry-deco', label: 'דלת כניסה עם מסגרת דקורטיבית', group: 'דלתות', kind: 'door-entry', variant: 'deco', w: 1100, h: 2300, sill: 0, color: '#e9e4da', leaf: '#4e3424' },
+  { id: 'door-double-glass', label: 'דלת כפולה מזכוכית', group: 'דלתות', kind: 'door-double', w: 1600, h: 2200, sill: 0, color: '#2f3134', leaf: '#a9cde0' },
+  { id: 'door-double-wood', label: 'דלת כפולה מעץ', group: 'דלתות', kind: 'door-double', w: 1500, h: 2200, sill: 0, color: '#6b4a33', leaf: '#7a5238' },
+  { id: 'door-sliding-glass', label: 'דלת הזזה מזכוכית', group: 'דלתות', kind: 'vitrine', w: 2400, h: 2200, sill: 0, color: '#3a3f45' },
+  { id: 'door-barn', label: 'דלת אסם (הזזה על מסילה)', group: 'דלתות', kind: 'door', variant: 'barn', w: 1000, h: 2200, sill: 0, color: '#3a3f45', leaf: '#8a6a4a' },
+  { id: 'door-pivot', label: 'דלת ציר מרכזי (פיבוט)', group: 'דלתות', kind: 'door-entry', variant: 'pivot', w: 1200, h: 2400, sill: 0, color: '#2f3134', leaf: '#5a4030' },
+  { id: 'door-arched', label: 'דלת עם קשת עליונה', group: 'דלתות', kind: 'door', shape: 'arch', w: 1000, h: 2500, sill: 0, color: '#6b4a33', leaf: '#7a5238' },
+  { id: 'door-arched-double', label: 'דלת כפולה מקושתת', group: 'דלתות', kind: 'door-double', shape: 'arch', w: 1600, h: 2800, sill: 0, color: '#4e3424', leaf: '#6b4a33' },
+  { id: 'door-arched-glass', label: 'דלת זכוכית מקושתת', group: 'דלתות', kind: 'door-glass', shape: 'segment', w: 1100, h: 2400, sill: 0, color: '#2f3134' },
+  { id: 'door-protected', label: 'דלת מוגנת (להמחשה בלבד)', group: 'דלתות', kind: 'door', variant: 'protected', w: 800, h: 2000, sill: 0, color: '#5d6166', leaf: '#6c7075', note: 'סמל להמחשה בלבד. אינו מייצג מוצר מאושר או דרישה של גורם מוסמך.' },
+  // Windows
+  { id: 'win-rect', label: 'חלון מלבני', group: 'חלונות', kind: 'window', w: 1200, h: 1200, sill: 900 },
+  { id: 'win-sliding', label: 'חלון הזזה', group: 'חלונות', kind: 'window-sliding', w: 1600, h: 1300, sill: 900 },
+  { id: 'win-tall', label: 'חלון גבוה וצר', group: 'חלונות', kind: 'window-fixed', w: 600, h: 2000, sill: 400 },
+  { id: 'win-panoramic', label: 'חלון פנורמי', group: 'חלונות', kind: 'window-large', w: 3600, h: 1800, sill: 500, color: '#3a3f45' },
+  { id: 'win-vitrine', label: 'ויטרינה מהרצפה', group: 'חלונות', kind: 'vitrine', w: 3000, h: 2400, sill: 0, color: '#3a3f45' },
+  { id: 'win-grid', label: 'חלון עם חלוקה דקורטיבית', group: 'חלונות', kind: 'window-fixed', variant: 'grid', w: 1200, h: 1500, sill: 800, color: '#2f3134' },
+  { id: 'win-round', label: 'חלון עגול', group: 'חלונות', kind: 'window-fixed', shape: 'round', w: 800, h: 800, sill: 1300 },
+  { id: 'win-oval', label: 'חלון אליפטי', group: 'חלונות', kind: 'window-fixed', shape: 'oval', w: 1200, h: 800, sill: 1200 },
+  { id: 'win-arched', label: 'חלון מקושת', group: 'חלונות', kind: 'window-fixed', shape: 'arch', w: 1000, h: 1700, sill: 800 },
+  { id: 'win-arched-grid', label: 'חלון מקושת עם חלוקה', group: 'חלונות', kind: 'window-fixed', shape: 'arch', variant: 'grid', w: 1200, h: 1900, sill: 700, color: '#2f3134' },
+  { id: 'win-pointed', label: 'חלון קשת מחודדת', group: 'חלונות', kind: 'window-fixed', shape: 'pointed', w: 900, h: 1800, sill: 800 },
+  { id: 'win-segment', label: 'חלון קשת שטוחה', group: 'חלונות', kind: 'window', shape: 'segment', w: 1400, h: 1400, sill: 900 },
+  // Passages and niches
+  { id: 'pass-arch', label: 'מעבר מקושת (פתח בלי דלת)', group: 'מעברים ונישות', kind: 'door', shape: 'arch', variant: 'passage', w: 1200, h: 2500, sill: 0 },
+  { id: 'pass-ellipse', label: 'מעבר בקשת אליפטית', group: 'מעברים ונישות', kind: 'door', shape: 'ellipse', variant: 'passage', w: 1800, h: 2400, sill: 0 },
+  { id: 'pass-pointed', label: 'מעבר בקשת מחודדת', group: 'מעברים ונישות', kind: 'door', shape: 'pointed', variant: 'passage', w: 1200, h: 2600, sill: 0 },
+  { id: 'pass-rect', label: 'מעבר פתוח מלבני', group: 'מעברים ונישות', kind: 'door', variant: 'passage', w: 1200, h: 2200, sill: 0 },
+  { id: 'pass-deco', label: 'מעבר מקושת עם מסגרת דקורטיבית', group: 'מעברים ונישות', kind: 'door', shape: 'arch', variant: 'deco', w: 1400, h: 2600, sill: 0, color: '#e9e4da' },
+  { id: 'niche-arch', label: 'נישה מקושתת בקיר', group: 'מעברים ונישות', kind: 'window-fixed', shape: 'arch', variant: 'niche', depth: 120, w: 700, h: 1200, sill: 900 },
+  { id: 'niche-rect', label: 'נישה מלבנית בקיר', group: 'מעברים ונישות', kind: 'window-fixed', variant: 'niche', depth: 120, w: 900, h: 500, sill: 1100 },
+];
+
+export const openingPreset = (id: string | undefined) => OPENING_PRESETS.find((p) => p.id === id);
+
+/** Label of an opening for lists: its preset, else its 3.0 kind. */
+export const openingLabel = (o: Pick<Opening, 'kind' | 'preset'>) => openingPreset(o.preset)?.label ?? openingDef(o.kind).label;
+
 const BY_KIND = new Map(OPENINGS.map((o) => [o.kind, o]));
 export const openingDef = (k: OpeningKind | string): OpeningDef => BY_KIND.get(k as OpeningKind) ?? OPENINGS[0];
 export const isOpeningKind = (k: unknown): k is OpeningKind => typeof k === 'string' && BY_KIND.has(k as OpeningKind);
@@ -49,6 +104,7 @@ export function checkWallOpenings(wall: Wall, openings: Opening[], wallHeight: n
     if (o.sill < 0) out.push({ id: o.id, msg: 'גובה סף שלילי אינו אפשרי.', severe: true });
     if (o.pos - o.width / 2 < -0.5 || o.pos + o.width / 2 > L + 0.5) out.push({ id: o.id, msg: `הפתח חורג מאורך הקיר (${(L / 1000).toFixed(2)} מ׳).`, severe: true });
     if (o.sill + o.height > wallHeight + 0.5) out.push({ id: o.id, msg: `הפתח גבוה מהקיר (גובה הקיר ${(wallHeight / 1000).toFixed(2)} מ׳).`, severe: true });
+    if (o.variant === 'niche' && (o.depth ?? 0) >= wall.thickness - 19) out.push({ id: o.id, msg: 'עומק הנישה גדול מעובי הקיר. הנישה תישאר עם גב של 2 ס״מ לפחות.', severe: false });
   }
   // Overlaps, pair by pair. An opening that is demolished and a new one in its place never exist together, so that
   // pair is not an overlap (a renovation often replaces a window with a wider one).

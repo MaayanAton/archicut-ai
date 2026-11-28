@@ -10,8 +10,11 @@ import { add, mul, norm, perpL, rotatePt, sub } from '../../site/poly';
 import { tone, Halo } from '../../site/render/plan';
 import { fmtArea, mToStr } from '../../site/units';
 import type { BldSection, BuildingData, Furniture, Phase, PlanKind, ViewState } from '../types';
-import { columnOutline, furnitureOutline, inState, sortedLevels, type BuildingModel, type LevelModel, type OpeningModel } from '../model';
-import { furn, partColor } from '../furniture';
+import { columnOutline, furnitureOutline, inState, shownEl, sortedLevels, type BuildingModel, type LevelModel, type OpeningModel } from '../model';
+import { furn, partBottom, partColor, partTop } from '../furniture';
+import { isRich, resolveFinish } from '../../materials/finish';
+import type { FloorFinish } from '../types';
+import { faceRange } from '../wall4';
 import { stairGeom } from '../stairs';
 
 export const SEL = '#e8590c';
@@ -59,14 +62,20 @@ export function furnitureSymbol(f: Furniture, ctx: ViewCtx, opts: { color?: stri
   const bw = ctx.bw;
   const w = 0.13 * ctx.pu;
   const T = (x: number, y: number) => rotatePt(v2(f.p.x + x, f.p.y + y), f.rot, f.p);
-  const parts = item.parts(f.w, f.d, f.h).slice().sort((a, b) => a.z1 - b.z1);
+  const parts = item.parts(f.w, f.d, f.h).slice().sort((a, b) => partTop(a) - partTop(b));
   const stroke = opts.color ?? (bw ? '#222' : '#3d4248');
-  const dash = item.above || opts.dashed ? `${1.2 * ctx.pu} ${0.8 * ctx.pu}` : undefined;
+  const dashS = `${1.2 * ctx.pu} ${0.8 * ctx.pu}`;
+  const dash = item.above || opts.dashed ? dashS : undefined;
+  // 4.0 "cut" items (gates, arches, canopies) are drawn as cut 1.20 m above the floor: what is above is dashed.
+  const cutZ = 1200 - f.elev;
   const nodes: ReactNode[] = parts.map((p, i) => {
-    const fill = item.above ? 'none' : bw ? '#ffffff' : tone(partColor(p.c, f.color, f.color2), false, 0.45);
-    if (p.t === 'box') return <path key={i} d={d([T(p.x0, p.y0), T(p.x1, p.y0), T(p.x1, p.y1), T(p.x0, p.y1)], ctx)} fill={fill} stroke={stroke} strokeWidth={w} strokeDasharray={dash} />;
+    const above = item.cut && partBottom(p) > cutZ;
+    const pd = above ? dashS : dash;
+    const fill = item.above || above ? 'none' : bw ? '#ffffff' : p.c === 'lamp' ? '#fff3c8' : tone(partColor(p.c, f.color, f.color2, f.color3), false, 0.45);
+    if (p.t === 'box' || p.t === 'slice') return <path key={i} d={d([T(p.x0, p.y0), T(p.x1, p.y0), T(p.x1, p.y1), T(p.x0, p.y1)], ctx)} fill={fill} stroke={stroke} strokeWidth={w} strokeDasharray={pd} />;
+    if (p.t === 'poly') return <path key={i} d={d(p.pts.map(([x, y]) => T(x, y)), ctx)} fill={fill} stroke={stroke} strokeWidth={w} strokeDasharray={pd} />;
     const c = ctx.T(T(p.cx, p.cy));
-    return <circle key={i} cx={c.x} cy={c.y} r={p.r * ctx.k} fill={fill} stroke={stroke} strokeWidth={w} strokeDasharray={dash} />;
+    return <circle key={i} cx={c.x} cy={c.y} r={p.r * ctx.k} fill={fill} stroke={stroke} strokeWidth={w} strokeDasharray={pd} />;
   });
   for (const [i, l] of (item.lines?.(f.w, f.d) ?? []).entries()) {
     const a = ctx.T(T(l[0], l[1])), b = ctx.T(T(l[2], l[3]));
@@ -145,7 +154,7 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
   if (o.ghost) for (const wm of o.ghost.walls) nodes.push(<path key={`gh${wm.w.id}`} d={d(wm.outline, ctx)} fill="none" stroke="#9aa3ad" strokeWidth={pw(0.15)} strokeDasharray={`${pw(1)} ${pw(0.8)}`} />);
 
   // Drawn slabs: balconies, floors and openings in the floor.
-  for (const s of dd.slabs.filter((x) => x.levelId === levelId && inState(x.phase, state, ren))) {
+  for (const s of dd.slabs.filter((x) => x.levelId === levelId && inState(x.phase, state, ren) && shownEl(dd, x))) {
     if (s.pts.length < 3) continue;
     const isSel = sel.has(s.id);
     if (s.kind === 'void') {
@@ -162,10 +171,19 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
     if (!r.net) continue;
     const isSel = sel.has(r.room.id);
     nodes.push(<path key={`rf${r.room.id}`} data-el={r.room.id} d={d(r.net, ctx)} fill={bw ? '#ffffff' : tone(r.room.floor.color, false, 0.62)} stroke={isSel ? SEL : 'none'} strokeWidth={pw(0.5)} />);
+    // 4.0: the laying pattern of the floor (tiles, planks), in design plans.
+    if (showFurn && isRich(r.room.floor)) nodes.push(floorPattern(r.room.floor, r.net, ctx, `rp${r.room.id}`));
+    if (r.room.safeRoom) nodes.push(<Txt key={`sr${r.room.id}`} p={v2(r.center.x, r.center.y + (3.4 * ctx.pu) / ctx.k)} ctx={ctx} size={1.9} color="#8a3b12">{'ממ״ד (להמחשה בלבד)'}</Txt>);
+  }
+  // 4.0: floor zones (another finish inside a room).
+  for (const fz of (dd.floorZones ?? []).filter((x) => x.levelId === levelId && shownEl(dd, x) && x.pts.length >= 3)) {
+    const isSel = sel.has(fz.id);
+    nodes.push(<path key={`fz${fz.id}`} data-el={fz.id} d={d(fz.pts, ctx)} fill={bw ? '#ffffff' : tone(fz.floor.color, false, 0.55)} stroke={isSel ? SEL : bw ? '#444' : '#6b6f75'} strokeWidth={pw(isSel ? 0.5 : 0.15)} strokeDasharray={`${pw(1.5)} ${pw(0.7)}`} />);
+    if (showFurn && isRich(fz.floor)) nodes.push(floorPattern(fz.floor, fz.pts, ctx, `fp${fz.id}`));
   }
 
   // Stairs.
-  for (const st of dd.stairs.filter((x) => x.levelId === levelId && inState(x.phase, state, ren))) {
+  for (const st of dd.stairs.filter((x) => x.levelId === levelId && inState(x.phase, state, ren) && shownEl(dd, x))) {
     const g = stairGeom(st);
     const isSel = sel.has(st.id);
     const col = isSel ? SEL : phaseStyle(st.phase, state, ren) === 'demolish' ? RED : '#333';
@@ -185,7 +203,7 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
   // A stair that rises from the level below into this one, seen from above through its opening: thin lines and "ירידה".
   const lvls = sortedLevels(dd);
   const below = lvls[lvls.findIndex((l) => l.id === levelId) - 1];
-  if (below) for (const st of dd.stairs.filter((x) => x.levelId === below.id && inState(x.phase, state, ren))) {
+  if (below) for (const st of dd.stairs.filter((x) => x.levelId === below.id && inState(x.phase, state, ren) && shownEl(dd, x))) {
     const g = stairGeom(st);
     if (!g.treads.length) continue;
     const col = '#6b6b6b';
@@ -200,20 +218,20 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
   }
 
   // Furniture (under the walls' outline so that items touching walls look tidy).
-  if (showFurn) for (const f of dd.furniture.filter((x) => x.levelId === levelId && inState(x.phase, state, ren))) {
+  if (showFurn) for (const f of dd.furniture.filter((x) => x.levelId === levelId && inState(x.phase, state, ren) && shownEl(dd, x))) {
     const ps = phaseStyle(f.phase, state, ren);
     const isSel = sel.has(f.id);
     nodes.push(<g key={`f${f.id}`} data-el={f.id}>{furnitureSymbol(f, ctx, { color: isSel ? SEL : ps === 'demolish' ? RED : ps === 'new' ? GREEN : undefined, dashed: ps === 'demolish' })}</g>);
   }
 
   // Columns and beams (beams are above: dashed).
-  for (const c of dd.columns.filter((x) => x.levelId === levelId && inState(x.phase, state, ren))) {
+  for (const c of dd.columns.filter((x) => x.levelId === levelId && inState(x.phase, state, ren) && shownEl(dd, x))) {
     const isSel = sel.has(c.id);
     const fill = isSel ? SEL : wallDark;
     if (c.round) { const q = ctx.T(c.p); nodes.push(<circle key={c.id} data-el={c.id} cx={q.x} cy={q.y} r={(c.w / 2) * ctx.k} fill={fill} />); }
     else nodes.push(<path key={c.id} data-el={c.id} d={d(columnOutline(c), ctx)} fill={fill} />);
   }
-  for (const b of dd.beams.filter((x) => x.levelId === levelId && inState(x.phase, state, ren))) {
+  for (const b of dd.beams.filter((x) => x.levelId === levelId && inState(x.phase, state, ren) && shownEl(dd, x))) {
     const n = mul(perpL(norm(sub(b.b, b.a))), b.w / 2);
     nodes.push(<path key={b.id} data-el={b.id} d={d([add(b.a, n), add(b.b, n), sub(b.b, n), sub(b.a, n)], ctx)} fill="none" stroke={sel.has(b.id) ? SEL : '#555'} strokeWidth={pw(0.18)} strokeDasharray={`${pw(3)} ${pw(1)}`} />);
   }
@@ -227,6 +245,26 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
     for (const wm of groups[g]) for (const [i, p] of wm.pieces.entries()) nodes.push(<path key={`wf${wm.w.id}${i}`} data-el={wm.w.id} d={d(p, ctx)} fill={sel.has(wm.w.id) ? SEL : fills[g]} stroke="none" />);
   }
   for (const wm of groups.demolish) for (const [i, p] of wm.pieces.entries()) nodes.push(<path key={`wd${wm.w.id}${i}`} data-el={wm.w.id} d={d(p, ctx)} fill={bw ? 'none' : 'rgba(208,47,47,0.08)'} stroke={sel.has(wm.w.id) ? SEL : RED} strokeWidth={pw(0.4)} strokeDasharray={`${pw(1.6)} ${pw(0.9)}`} />);
+
+  // 4.0: finishes of the wall faces (design plans): a thin coloured line along each face with a 4.0 finish, and the
+  // zones that the plan cut (1.20 m) passes through.
+  if (showFurn && !bw) for (const wm of lm.walls) {
+    const w = wm.w;
+    const u = norm(sub(w.b, w.a)), n = perpL(u);
+    const line = (side: 'L' | 'R', s0: number, s1: number, color: string, k: string, wid: number) => {
+      const off = (side === 'L' ? 1 : -1) * (w.thickness / 2 + (wid * ctx.pu) / ctx.k / 2);
+      const a = ctx.T(add(w.a, add(mul(u, s0), mul(n, off)))), b = ctx.T(add(w.a, add(mul(u, s1), mul(n, off))));
+      nodes.push(<line key={k} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={wid * ctx.pu} />);
+    };
+    for (const side of ['L', 'R'] as const) {
+      const fin = side === 'L' ? w.left : w.right;
+      const fr = faceRange(wm.outline, w, side);
+      if (isRich(fin)) line(side, fr[0], fr[1], tone(fin.color, false, 0.1), `wfl${w.id}${side}`, 0.35);
+      for (const zn of (w.zones ?? []).filter((q) => q.side === side && q.z0 <= 1200 && (q.z1 ?? 1e9) >= 1200)) {
+        line(side, Math.max(fr[0], zn.s0 ?? -1e9), Math.min(fr[1], zn.s1 ?? 1e9), tone(zn.finish.color, false, 0), `wz${zn.id}`, 0.55);
+      }
+    }
+  }
 
   // Openings.
   for (const wm of lm.walls) for (const om of wm.openings) {
@@ -254,7 +292,7 @@ export function renderBuildingPlan(dd: BuildingData, m: BuildingModel, levelId: 
   }
 
   // Annotations.
-  for (const a of dd.annotations.filter((x) => x.levelId === levelId)) {
+  for (const a of dd.annotations.filter((x) => x.levelId === levelId && shownEl(dd, x))) {
     const col = sel.has(a.id) ? SEL : '#222';
     nodes.push(<g key={a.id} data-el={a.id}>{a.type === 'dim' ? <Dimension a={a.a} b={a.b} offset={a.offset} ctx={ctx} color={col} text={mToStr(Math.hypot(a.b.x - a.a.x, a.b.y - a.a.y), 2)} /> : <Txt p={a.p} ctx={ctx} size={a.size} color={col}>{a.text}</Txt>}</g>);
   }
@@ -332,4 +370,56 @@ export function buildingBox(dd: BuildingData, m: BuildingModel): Box {
   for (const l of dd.levels) { const lb = levelBox(dd, m, l.id); if (Number.isFinite(lb.minX)) { b = addPt(b, v2(lb.minX, lb.minY)); b = addPt(b, v2(lb.maxX, lb.maxY)); } }
   for (const p of dd.lot) b = addPt(b, p);
   return b;
+}
+
+/** Laying pattern of a 4.0 floor finish inside a polygon: tile joints or plank rows, turned by the laying angle. */
+export function floorPattern(f: FloorFinish, poly: Vec2[], ctx: ViewCtx, key: string): ReactNode {
+  const r = resolveFinish(f);
+  const sp = r.spec;
+  const kind = sp.pattern;
+  const isPlank = kind === 'plank';
+  const isTile = kind === 'tile' || kind === 'stone' || kind === 'brick' || kind === 'marble' || kind === 'terrazzo' || kind === 'hex';
+  if (!isPlank && !isTile) return null;
+  const tw = Math.max(50, sp.tw), th = Math.max(30, sp.th);
+  // Lines in the finish's own frame (x along the planks), clipped to the polygon's box.
+  const a = (r.angle * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+  const loc = poly.map((p) => v2(p.x * ca + p.y * sa, -p.x * sa + p.y * ca));
+  const xs = loc.map((p) => p.x), ys = loc.map((p) => p.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const segs: [number, number, number, number][] = [];
+  const herring = isPlank && (sp.layout === 'herringbone' || sp.layout === 'chevron' || sp.layout === 'basket');
+  if ((x1 - x0) / tw * ((y1 - y0) / th) > 6000) return null; // too fine to draw at this size
+  if (herring) {
+    // Diagonal rows: a simple, honest sketch of the herringbone / chevron layout.
+    const step = th * Math.SQRT2;
+    for (let c = Math.floor((x0 - (y1 - y0)) / step) * step; c < x1 + (y1 - y0); c += step) { segs.push([c, y0, c + (y1 - y0), y1]); }
+    for (let row = Math.floor(y0 / tw) * tw; row < y1; row += tw) segs.push([x0, row, x1, row]);
+  } else {
+    const rowH = isPlank ? th : th, colW = tw;
+    const shift = sp.layout === 'offset' || sp.layout === 'staggered' ? 0.5 : isPlank && sp.layout !== 'stack' && sp.layout !== 'grid' ? 0.33 : 0;
+    let i = Math.floor(y0 / rowH);
+    for (let y = i * rowH; y < y1; y += rowH, i++) {
+      segs.push([x0, y, x1, y]);
+      const off = ((i * shift) % 1) * colW;
+      for (let x = Math.floor((x0 - off) / colW) * colW + off; x < x1; x += colW) if (x > x0) segs.push([x, y, x, y + rowH]);
+    }
+  }
+  const back = (x: number, y: number) => ctx.T(v2(x * ca - y * sa, x * sa + y * ca));
+  const id = `clip-${key}`;
+  const path = segs.map(([ax, ay, bx, by]) => { const p = back(ax, ay), q = back(bx, by); return `M${p.x.toFixed(1)} ${p.y.toFixed(1)}L${q.x.toFixed(1)} ${q.y.toFixed(1)}`; }).join('');
+  return (
+    <g key={key} pointerEvents="none">
+      <clipPath id={id}><path d={d(poly, ctx)} /></clipPath>
+      <path d={path} clipPath={`url(#${id})`} fill="none" stroke={darker(sp.grout && sp.groutW > 0 ? sp.grout : sp.color, 0.35)} strokeWidth={0.08 * ctx.pu} strokeOpacity={0.8} />
+    </g>
+  );
+}
+
+/** A darker shade of a colour (k 0 … 1). */
+function darker(hex: string, k: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return '#555555';
+  const n = parseInt(m[1], 16);
+  const f = (v: number) => Math.round(v * (1 - k));
+  return `#${((1 << 24) | (f((n >> 16) & 255) << 16) | (f((n >> 8) & 255) << 8) | f(n & 255)).toString(16).slice(1)}`;
 }

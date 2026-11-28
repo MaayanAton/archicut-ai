@@ -9,6 +9,8 @@ import { signedArea } from '../site/poly';
 import type { BuildingData, FloorFinish } from './types';
 import type { BPrim, BSolid, BuildingModel } from './model';
 import { material as matDef } from './materials';
+import { isRich, type FinishLike } from '../materials/finish';
+import { finishMaterial, finishRepeat } from '../materials/three';
 
 // ---------------------------------------------------------------- materials
 
@@ -20,6 +22,7 @@ export function bMaterial(color: string, role: string): THREE.Material {
     if (role === 'glass' || role === 'railing')
       m = new THREE.MeshStandardMaterial({ color, roughness: 0.1, metalness: 0.1, transparent: true, opacity: role === 'glass' ? 0.32 : 0.45, depthWrite: false, side: THREE.DoubleSide });
     else if (role === 'metal') m = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.6 });
+    else if (role === 'lamp') m = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.9, roughness: 0.4 });
     else m = new THREE.MeshStandardMaterial({ color, roughness: role === 'roof' ? 0.9 : 0.8, metalness: 0, flatShading: true });
     matCache.set(key, m);
   }
@@ -81,7 +84,17 @@ function floorMaterial(f: FloorFinish): THREE.Material {
 
 // ---------------------------------------------------------------- geometry
 
-interface Buckets { add(color: string, role: string, pos: number[], uv?: number[], floor?: FloorFinish): void }
+interface Buckets { add(color: string, role: string, pos: number[], uv?: number[], floor?: FloorFinish, tex?: FinishLike): void }
+
+/** Key of a 4.0 finish's material (everything but the texture angle, which lives in the texture coordinates). */
+const finishKey = (f: FinishLike) => [f.material, f.color, f.color2, f.tw ?? f.tileW, f.th ?? f.tileH, f.layout, f.grout, f.groutW, f.rough, f.metal, f.opacity, f.img].join('|');
+
+/** 4.0 texture coordinates: one unit per texture repeat, turned by the finish's angle. (a, b) are mm in the face plane. */
+function uvOf(f: FinishLike, a: number, b: number): [number, number] {
+  const rep = finishRepeat(f);
+  const ang = ((f.angle ?? 0) * Math.PI) / 180, ca = Math.cos(ang), sa = Math.sin(ang);
+  return [(a * ca + b * sa) / rep.w, (-a * sa + b * ca) / rep.h];
+}
 
 /** Top, bottom and sides of a prism (with holes, and with linear top / bottom heights for sloped roofs). */
 function prismInto(pr: Extract<BPrim, { t: 'prism' }>, out: Buckets) {
@@ -99,14 +112,22 @@ function prismInto(pr: Extract<BPrim, { t: 'prism' }>, out: Buckets) {
     top.push(all[i].x, all[i].y, zt[i], all[j].x, all[j].y, zt[j], all[k].x, all[k].y, zt[k]);
     caps.push(all[i].x, all[i].y, zb[i], all[k].x, all[k].y, zb[k], all[j].x, all[j].y, zb[j]);
   }
-  if (pr.floor) {
+  const texAll: FinishLike | undefined = pr.tex ?? (pr.floor && isRich(pr.floor) ? pr.floor : undefined);
+  if (texAll) {
+    // 4.0: the finish on the top and bottom faces, in plan coordinates.
+    for (const [i, j, k] of tris) for (const q of [all[i], all[j], all[k]]) uv.push(...uvOf(texAll, q.x, q.y));
+    out.add(pr.color, pr.role, top, uv, undefined, texAll);
+    const uvb: number[] = [];
+    for (const [i, j, k] of tris) for (const q of [all[i], all[k], all[j]]) uvb.push(...uvOf(texAll, q.x, q.y));
+    out.add(pr.color, pr.role, caps, uvb, undefined, texAll);
+  } else if (pr.floor) {
     // Texture coordinates: one unit per tile, turned by the laying angle.
     const a = (-pr.floor.angle * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
     const tw = pr.floor.tileW || 1000, th = pr.floor.tileH || 1000;
     for (const [i, j, k] of tris) for (const q of [all[i], all[j], all[k]]) uv.push((q.x * ca - q.y * sa) / tw, (q.x * sa + q.y * ca) / th);
     out.add(pr.color, 'finish', top, uv, pr.floor);
   } else out.add(pr.color, pr.role, top);
-  out.add(pr.color, pr.role, caps);
+  if (!texAll) out.add(pr.color, pr.role, caps);
   // Sides: outer ring counter-clockwise, holes clockwise, so every side faces out of the solid.
   let off = 0;
   for (const ring of [poly, ...holes]) {
@@ -116,15 +137,24 @@ function prismInto(pr: Extract<BPrim, { t: 'prism' }>, out: Buckets) {
       const ip = off + i, iq = off + ((i + 1) % n);
       const quad = [p.x, p.y, zb[ip], q.x, q.y, zb[iq], q.x, q.y, zt[iq], p.x, p.y, zb[ip], q.x, q.y, zt[iq], p.x, p.y, zt[ip]];
       let color = pr.color;
-      if (pr.side) {
+      let tex: FinishLike | undefined = texAll;
+      if (pr.side || pr.sideTex) {
         // Outward normal of this side (right of p→q for a counter-clockwise ring).
         const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
         const nx = dy / len, ny = -dx / len;
-        const dt = nx * pr.side.n.x + ny * pr.side.n.y;
-        if (dt > 0.7) color = pr.side.L;
-        else if (dt < -0.7) color = pr.side.R;
+        const sn = (pr.side ?? pr.sideTex)!.n;
+        const dt = nx * sn.x + ny * sn.y;
+        if (dt > 0.7) { if (pr.side) color = pr.side.L; tex = pr.sideTex?.L ?? tex; }
+        else if (dt < -0.7) { if (pr.side) color = pr.side.R; tex = pr.sideTex?.R ?? tex; }
       }
-      out.add(color, pr.role, quad);
+      if (tex) {
+        // Along the side (projected on its direction, so that pieces of one wall continue the pattern) and up.
+        const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+        const ex = dx / len, ey = dy / len;
+        const sp = p.x * ex + p.y * ey, sq = q.x * ex + q.y * ey;
+        const [a1, b1] = uvOf(tex, sp, zb[ip]), [a2, b2] = uvOf(tex, sq, zb[iq]), [a3, b3] = uvOf(tex, sq, zt[iq]), [a4, b4] = uvOf(tex, sp, zt[ip]);
+        out.add(color, pr.role, quad, [a1, b1, a2, b2, a3, b3, a1, b1, a3, b3, a4, b4], undefined, tex);
+      } else out.add(color, pr.role, quad);
     }
     off += n;
   }
@@ -138,10 +168,15 @@ export function solidGroup(s: BSolid): THREE.Group {
   if (hit) return hit;
   const buckets = new Map<string, { mat: THREE.Material; pos: number[]; uv: number[] | null; role: string }>();
   const out: Buckets = {
-    add(color, role, pos, uv, floor) {
-      const k = floor ? `F|${floor.material}|${color}|${floor.tileW}|${floor.tileH}` : `${color}|${role}`;
+    add(color, role, pos, uv, floor, tex) {
+      const k = tex ? `T|${finishKey(tex)}` : floor ? `F|${floor.material}|${color}|${floor.tileW}|${floor.tileH}` : `${color}|${role}`;
       let b = buckets.get(k);
-      if (!b) { b = { mat: floor ? floorMaterial(floor) : bMaterial(color, role), pos: [], uv: floor ? [] : null, role }; buckets.set(k, b); }
+      if (!b) {
+        const mat = tex ? finishMaterial(tex) : floor ? floorMaterial(floor) : bMaterial(color, role);
+        const clearTex = tex && (mat as THREE.MeshStandardMaterial).transparent;
+        b = { mat, pos: [], uv: floor || tex ? [] : null, role: clearTex ? 'glass' : role };
+        buckets.set(k, b);
+      }
       b.pos.push(...pos);
       if (b.uv && uv) b.uv.push(...uv);
       else if (b.uv) for (let i = 0; i < pos.length / 3; i++) b.uv.push(0, 0);
@@ -155,7 +190,14 @@ export function solidGroup(s: BSolid): THREE.Group {
       const g = new THREE.CylinderGeometry(pr.r, pr.r, h, 20).toNonIndexed();
       g.rotateX(Math.PI / 2);
       g.translate(pr.c.x, pr.c.y, pr.z0 + h / 2);
-      out.add(pr.color, pr.role, Array.from(g.getAttribute('position').array as Float32Array));
+      if (pr.tex) {
+        // 4.0: around the cylinder and up, in texture repeats.
+        const rep = finishRepeat(pr.tex);
+        const src = g.getAttribute('uv').array as Float32Array;
+        const uvs: number[] = [];
+        for (let i = 0; i < src.length; i += 2) uvs.push((src[i] * 2 * Math.PI * pr.r) / rep.w, (src[i + 1] * h) / rep.h);
+        out.add(pr.color, pr.role, Array.from(g.getAttribute('position').array as Float32Array), uvs, undefined, pr.tex);
+      } else out.add(pr.color, pr.role, Array.from(g.getAttribute('position').array as Float32Array));
       g.dispose();
     }
   }
