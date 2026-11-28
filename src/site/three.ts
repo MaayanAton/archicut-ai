@@ -2,6 +2,8 @@
 // Z is up, units are millimetres, exactly as in the engine.
 
 import * as THREE from 'three';
+import { finishMaterial, finishRepeat } from '../materials/three';
+import type { FinishLike } from '../materials/finish';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { type Vec2, v2 } from '../geometry/vec';
 import type { SiteData } from './types';
@@ -119,6 +121,40 @@ function primGeometry(pr: Prim): THREE.BufferGeometry | null {
   return g;
 }
 
+/** 4.0: texture coordinates in repeats: horizontal faces by plan x/y, walls by their horizontal direction and z. */
+function boxUV(geo: THREE.BufferGeometry, f: FinishLike): THREE.BufferGeometry {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const pos = g.getAttribute('position');
+  const { w: rw, h: rh } = finishRepeat(f);
+  const a = ((f.angle ?? 0) * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i + 2 < pos.count; i += 3) {
+    const ax = pos.getX(i), ay = pos.getY(i), az = pos.getZ(i);
+    const ux = pos.getX(i + 1) - ax, uy = pos.getY(i + 1) - ay, uz = pos.getZ(i + 1) - az;
+    const vx = pos.getX(i + 2) - ax, vy = pos.getY(i + 2) - ay, vz = pos.getZ(i + 2) - az;
+    const nx = Math.abs(uy * vz - uz * vy), ny = Math.abs(uz * vx - ux * vz), nz = Math.abs(ux * vy - uy * vx);
+    for (let k = 0; k < 3; k++) {
+      const x = pos.getX(i + k), y = pos.getY(i + k), z = pos.getZ(i + k);
+      let u: number, v: number;
+      if (nz >= nx && nz >= ny) { u = x * ca + y * sa; v = -x * sa + y * ca; } else if (nx >= ny) { u = y; v = z; } else { u = x; v = z; }
+      uv[(i + k) * 2] = u / Math.max(rw, 1);
+      uv[(i + k) * 2 + 1] = v / Math.max(rh, 1);
+    }
+  }
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return g;
+}
+
+/** A finish material with its own polygon offset (surfaces stacked on the ground). */
+const offsetMats = new WeakMap<THREE.Material, Map<number, THREE.Material>>();
+function offsetMaterial(base: THREE.Material, i: number): THREE.Material {
+  let m = offsetMats.get(base);
+  if (!m) { m = new Map(); offsetMats.set(base, m); }
+  let hit = m.get(i);
+  if (!hit) { hit = base.clone(); hit.polygonOffset = true; hit.polygonOffsetFactor = -2 - i; hit.polygonOffsetUnits = -2 - i; m.set(i, hit); }
+  return hit;
+}
+
 const groupCache = new WeakMap<ElementSolids, THREE.Group>();
 
 /** One group per element (merged by material), cached per solids object. */
@@ -128,10 +164,17 @@ export function elementGroup(id: string, s: ElementSolids, t: TerrainModel, step
   const g = new THREE.Group();
   g.userData.id = id;
   const byMat = new Map<string, { color: string; role: string; geos: THREE.BufferGeometry[] }>();
+  const byTex = new Map<string, { f: FinishLike; geos: THREE.BufferGeometry[] }>();
   for (const pr of s.prims) {
     if (pr.role === 'void') continue;
     const geo = primGeometry(pr);
     if (!geo) continue;
+    if (pr.tex) {
+      const k = JSON.stringify(pr.tex);
+      if (!byTex.has(k)) byTex.set(k, { f: pr.tex, geos: [] });
+      byTex.get(k)!.geos.push(boxUV(geo, pr.tex));
+      continue;
+    }
     const role = pr.material === 'glass' ? 'glass' : pr.role;
     const k = `${pr.color}|${role}`;
     if (!byMat.has(k)) byMat.set(k, { color: pr.color, role, geos: [] });
@@ -147,10 +190,21 @@ export function elementGroup(id: string, s: ElementSolids, t: TerrainModel, step
     m.userData.batchable = true;
     g.add(m);
   }
+  for (const { f, geos } of byTex.values()) {
+    const geo = geos.length === 1 ? geos[0] : mergeGeometries(geos.map((x) => { for (const k of Object.keys(x.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') x.deleteAttribute(k); return x; }), false);
+    if (!geo) continue;
+    const m = new THREE.Mesh(geo, finishMaterial(f));
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.userData.id = id;
+    m.userData.batchable = true;
+    g.add(m);
+  }
   s.surfaces.forEach((sf, i) => {
-    const geo = draped(sf.poly, t, step, 25 + i * 2);
-    if (!geo) return;
-    const mat = new THREE.MeshStandardMaterial({ color: sf.color, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2 - i, polygonOffsetUnits: -2 - i });
+    const geo0 = draped(sf.poly, t, step, 25 + i * 2);
+    if (!geo0) return;
+    const geo = sf.tex ? boxUV(geo0, sf.tex) : geo0;
+    const mat = sf.tex ? offsetMaterial(finishMaterial(sf.tex), i) : new THREE.MeshStandardMaterial({ color: sf.color, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2 - i, polygonOffsetUnits: -2 - i });
     const m = new THREE.Mesh(geo, mat);
     m.receiveShadow = true;
     m.userData.id = id;
@@ -305,6 +359,8 @@ export function renderSnapshot(d: SiteData, model: SiteModel, view: 'iso' | 'per
  * Big projects: one mesh per material for the whole site instead of a few meshes per element, so the GPU gets
  * a handful of draw calls. The element groups stay in the scene, hidden, for picking and selection boxes.
  */
+const mat0 = (m: THREE.Mesh) => (Array.isArray(m.material) ? m.material[0] : m.material);
+
 export function batchGroup(content: THREE.Group): THREE.Group {
   content.updateMatrixWorld(true);
   const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
@@ -316,6 +372,7 @@ export function batchGroup(content: THREE.Group): THREE.Group {
     clean.setAttribute('position', src.getAttribute('position').clone());
     if (src.getAttribute('normal')) clean.setAttribute('normal', src.getAttribute('normal').clone());
     else clean.computeVertexNormals();
+    if (src.getAttribute('uv') && (mat0(mesh) as THREE.MeshStandardMaterial).map) clean.setAttribute('uv', src.getAttribute('uv').clone());
     if (src.index) clean.setIndex(src.index.clone());
     const geo = clean.index ? clean.toNonIndexed() : clean;
     geo.applyMatrix4(mesh.matrixWorld);

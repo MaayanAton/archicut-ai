@@ -38,6 +38,9 @@ export interface SiteElement {
   elev: number;
   color: string;
   material: MaterialId;
+  /** 4.0 (optional): second colour of multi-part items, and a texture finish from the shared catalogue. */
+  color2?: string;
+  finish?: import('../materials/finish').FinishLike;
 }
 
 export interface SiteLayer {

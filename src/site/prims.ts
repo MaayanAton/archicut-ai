@@ -7,6 +7,8 @@ import { MATERIALS, lib, prm } from './library';
 import { centroid, insetPolygon, localToWorld, rectAround, segmentQuads, sub, dot, norm, rotatePt } from './poly';
 import { elementOutline, elementPath } from './outline';
 import type { TerrainModel } from './terrain';
+import type { FinishLike } from '../materials/finish';
+import type { SPart, Slot } from './library';
 
 /** Height as a linear function of plan position: z = c + cx·x + cy·y. */
 export interface Lin { c: number; cx: number; cy: number }
@@ -25,7 +27,7 @@ const shift = (l: Lin, dz: number): Lin => ({ ...l, c: l.c + dz });
 /** How a solid is drawn in a section: hatched solid, tree crown, water, or an empty space (pool basin). */
 export type Role = 'solid' | 'foliage' | 'water' | 'void' | 'trunk';
 
-interface PrimBase { id: string; role: Role; color: string; material: MaterialId }
+interface PrimBase { id: string; role: Role; color: string; material: MaterialId; /** 4.0: texture finish (main parts only). */ tex?: FinishLike }
 export type Prim =
   | (PrimBase & { t: 'prism'; poly: Vec2[]; z0: Lin; z1: Lin })
   | (PrimBase & { t: 'cyl'; c: Vec2; r: number; z0: number; z1: number })
@@ -33,7 +35,7 @@ export type Prim =
   | (PrimBase & { t: 'cone'; c: Vec2; r: number; z0: number; z1: number });
 
 /** A layer draped on the ground: lawn, paving, path. thick = paving depth below the ground line. */
-export interface Surface { id: string; poly: Vec2[]; color: string; material: MaterialId; thick: number; kind: string }
+export interface Surface { id: string; poly: Vec2[]; color: string; material: MaterialId; thick: number; kind: string; tex?: FinishLike }
 
 export interface ElementSolids { prims: Prim[]; surfaces: Surface[] }
 
@@ -59,18 +61,41 @@ export function elementSolids(e: SiteElement, t: TerrainModel): ElementSolids {
 
   // ---- surfaces draped on the ground ----
   if (L.surface && g.type !== 'point' && g.type !== 'dim') {
-    out.surfaces.push({ id, poly: elementOutline(e), color: col, material: mat, thick: prm(e, 'thick'), kind: e.kind });
+    out.surfaces.push({ id, poly: elementOutline(e), color: col, material: mat, thick: prm(e, 'thick'), kind: e.kind, ...(e.finish ? { tex: e.finish } : {}) });
     return out;
   }
+  const tex = e.finish;
 
   // ---- line elements: one solid per segment, following the ground at each end ----
   if (g.type === 'line') {
     const w = prm(e, 'width'), h = prm(e, 'h');
+    const groundAt = (q: Vec2) => (e.elevMode === 'absolute' ? e.elev : t.z(q) + e.elev);
+    if (e.kind === 'path-stepping') {
+      // Separate stones along the line, each following the ground under it.
+      const path = elementPath(e), sp = Math.max(prm(e, 'spacing'), w * 0.5, 100);
+      let carry = sp / 2;
+      for (let i = 0; i + 1 < path.length; i++) {
+        const a = path[i], b = path[i + 1], L2 = Math.hypot(b.x - a.x, b.y - a.y);
+        if (L2 < 1) continue;
+        const u = norm(sub(b, a)), ang = (Math.atan2(u.y, u.x) * 180) / Math.PI;
+        for (let s0 = carry; s0 <= L2; s0 += sp) {
+          const c = v2(a.x + u.x * s0, a.y + u.y * s0), z = groundAt(c);
+          out.prims.push({ t: 'prism', id, role: 'solid', color: col, material: mat, poly: rectAround(c, w * 0.6, w, ang), z0: flat(z - 20), z1: flat(z + h - 20), ...(tex ? { tex } : {}) });
+          carry = s0 + sp - L2;
+        }
+        if (carry > sp) carry = sp;
+      }
+      return out;
+    }
     for (const q of segmentQuads(elementPath(e), w)) {
-      const za = e.elevMode === 'absolute' ? e.elev : t.z(q.a) + e.elev;
-      const zb = e.elevMode === 'absolute' ? e.elev : t.z(q.b) + e.elev;
-      const bottom = linAlong(q.a, q.b, za, zb);
-      P(q.quad, bottom, shift(bottom, h), e.kind === 'hedge' ? 'foliage' : 'solid');
+      const bottom = linAlong(q.a, q.b, groundAt(q.a), groundAt(q.b));
+      if (e.kind === 'water-channel') {
+        // A channel sunk into the ground: water below the ground line, stone edges level with it.
+        P(q.quad, shift(bottom, -h - 80), shift(bottom, -h), 'solid', C('stone'), 'stone');
+        P(q.quad, shift(bottom, -h), shift(bottom, -60), 'water', col, 'water');
+        continue;
+      }
+      out.prims.push({ t: 'prism', id, role: e.kind === 'hedge' ? 'foliage' : 'solid', color: col, material: mat, poly: q.quad, z0: bottom, z1: shift(bottom, h), ...(tex ? { tex } : {}) });
     }
     return out;
   }
@@ -92,10 +117,10 @@ export function elementSolids(e: SiteElement, t: TerrainModel): ElementSolids {
       }
       P(poly, base + h - roof, base + h, 'solid', C('concrete'), 'concrete');
       P(inner, base, base + 150, 'solid', C('concrete'), 'concrete');
-    } else if (e.kind === 'pond') {
+    } else if (e.kind === 'pond' || e.kind === 'pool' || e.kind === 'pool-kids') {
       const depth = prm(e, 'depth');
       const rim = base;
-      const inner = insetPolygon(poly, 150);
+      const inner = insetPolygon(poly, e.kind === 'pond' ? 150 : 300);
       P(poly, rim - depth - 150, rim - depth, 'solid', C('concrete'), 'concrete');
       for (let i = 0; i < poly.length; i++) {
         const j = (i + 1) % poly.length;
@@ -109,6 +134,7 @@ export function elementSolids(e: SiteElement, t: TerrainModel): ElementSolids {
 
   if (g.type !== 'point') return out;
   const p = g.p, rot = g.rot;
+  if (L.parts) { partsSolids(e, L.parts((k) => prm(e, k)), base, out); return out; }
   const box = (cx: number, cy: number, w: number, d: number, z0: number, z1: number, role: Role = 'solid', color = col, material = mat) =>
     P(rectAround(localToWorld(p, rot, v2(cx, cy)), w, d, rot), base + z0, base + z1, role, color, material);
 
@@ -229,6 +255,69 @@ export function elementSolids(e: SiteElement, t: TerrainModel): ElementSolids {
     default:
   }
   return out;
+}
+
+// ---------------------------------------------------------------- 4.0 parts
+
+const SLOT: Record<Exclude<Slot, 1 | 2>, { color: string; material: MaterialId; role: Role }> = {
+  foliage: { color: '#5e9c4f', material: 'foliage', role: 'foliage' },
+  trunk: { color: '#7a5a3c', material: 'bark', role: 'trunk' },
+  water: { color: '#7fb6d9', material: 'water', role: 'water' },
+  metal: { color: '#6c7480', material: 'metal', role: 'solid' },
+  wood: { color: '#b5835a', material: 'wood', role: 'solid' },
+  stone: { color: '#bdb5a7', material: 'stone', role: 'solid' },
+  concrete: { color: '#c8c6c0', material: 'concrete', role: 'solid' },
+  rubber: { color: '#d9734e', material: 'rubber', role: 'solid' },
+  glass: { color: '#a9c9df', material: 'glass', role: 'solid' },
+  lamp: { color: '#f3e7b3', material: 'glass', role: 'solid' },
+  soil: { color: '#6e5238', material: 'soil', role: 'solid' },
+  sand: { color: '#e2cfa0', material: 'gravel', role: 'solid' },
+  dark: { color: '#2f3134', material: 'metal', role: 'solid' },
+  white: { color: '#f4f4f0', material: 'metal', role: 'solid' },
+  orange: { color: '#e8902f', material: 'metal', role: 'solid' },
+  pink: { color: '#e07a9a', material: 'foliage', role: 'foliage' },
+  green: { color: '#4f8a3e', material: 'metal', role: 'solid' },
+  blue: { color: '#2f6e9a', material: 'metal', role: 'solid' },
+  bamboo: { color: '#9bb35a', material: 'wood', role: 'trunk' },
+};
+
+/** The solids of a library item made of parts, in the plan position and rotation of the element. */
+function partsSolids(e: SiteElement, parts: SPart[], base: number, out: ElementSolids) {
+  if (e.geom.type !== 'point') return;
+  const p = e.geom.p, rot = e.geom.rot;
+  const L = lib(e.kind);
+  const green = L.material === 'foliage' || L.material === 'planting';
+  const W = (x: number, y: number) => localToWorld(p, rot, v2(x, y));
+  for (const q of parts) {
+    const s = q.c === 1 ? { color: e.color, material: e.material, role: (green ? 'foliage' : 'solid') as Role }
+      : q.c === 2 ? { color: e.color2 ?? L.color2 ?? e.color, material: e.material, role: (green ? 'foliage' : 'solid') as Role }
+        : SLOT[q.c];
+    const base0 = { id: e.id, role: s.role, color: s.color, material: s.material, ...(q.c === 1 && e.finish ? { tex: e.finish } : {}) };
+    switch (q.t) {
+      case 'box':
+        if (q.x1 - q.x0 < 0.5 || q.y1 - q.y0 < 0.5 || q.z1 - q.z0 < 0.5) break;
+        out.prims.push({ ...base0, t: 'prism', poly: [W(q.x0, q.y0), W(q.x1, q.y0), W(q.x1, q.y1), W(q.x0, q.y1)], z0: flat(base + q.z0), z1: flat(base + q.z1) });
+        break;
+      case 'slice': {
+        if (q.x1 - q.x0 < 0.5) break;
+        const a = W(q.x0, 0), b = W(q.x1, 0);
+        out.prims.push({ ...base0, t: 'prism', poly: [W(q.x0, q.y0), W(q.x1, q.y0), W(q.x1, q.y1), W(q.x0, q.y1)], z0: linAlong(a, b, base + q.b0, base + q.b1), z1: linAlong(a, b, base + q.t0, base + q.t1) });
+        break;
+      }
+      case 'poly': {
+        const poly = q.pts.map(([x, y]) => W(x, y));
+        if (q.tilt) {
+          const a = W(0, q.tilt.y0), b = W(0, q.tilt.y1);
+          const bottom = linAlong(a, b, base + q.tilt.z0, base + q.tilt.z1);
+          out.prims.push({ ...base0, t: 'prism', poly, z0: bottom, z1: shift(bottom, q.tilt.th) });
+        } else if (q.z1 - q.z0 >= 0.5) out.prims.push({ ...base0, t: 'prism', poly, z0: flat(base + q.z0), z1: flat(base + q.z1) });
+        break;
+      }
+      case 'cyl': if (q.r > 0 && q.z1 > q.z0) out.prims.push({ ...base0, t: 'cyl', c: W(q.x, q.y), r: q.r, z0: base + q.z0, z1: base + q.z1 }); break;
+      case 'cone': if (q.r > 0 && q.z1 > q.z0) out.prims.push({ ...base0, t: 'cone', c: W(q.x, q.y), r: q.r, z0: base + q.z0, z1: base + q.z1 }); break;
+      case 'ell': if (q.r > 0 && q.rz > 0) out.prims.push({ ...base0, t: 'ell', c: W(q.x, q.y), r: q.r, rz: q.rz, zc: base + q.zc }); break;
+    }
+  }
 }
 
 /** Arrow direction (up the stairs or ramp) in plan, for drawing. */

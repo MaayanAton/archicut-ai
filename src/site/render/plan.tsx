@@ -14,6 +14,9 @@ import type { SiteModel } from '../section';
 import type { Contour, TerrainModel } from '../terrain';
 import { fmtArea, fmtLevel, mToStr } from '../units';
 import type { Prim } from '../prims';
+import { isRich } from '../../materials/finish';
+import { floorPattern } from '../../building/render/plan';
+import type { FloorFinish } from '../../building/types';
 
 export const SELECT_COLOR = '#e8590c';
 
@@ -166,12 +169,14 @@ export function renderSitePlan(d: SiteData, model: SiteModel, ctx: ViewCtx, opts
       node = <path d={pathD(pts, ctx, true)} fill={bw ? 'none' : '#7a4fb0'} fillOpacity={0.05} stroke={bw ? '#444' : '#7a4fb0'} strokeWidth={lw(0.3)} strokeDasharray={`${lw(2)} ${lw(1)}`} />;
       labels.push(<Txt key={`zl${key}`} p={centroid(pts)} ctx={ctx} size={2.8} color={bw ? '#222' : '#5a3590'} bold bg>{e.name || 'אזור'}</Txt>);
       if (opts.areaLabels !== false) labels.push(<Txt key={`za${key}`} p={v2(centroid(pts).x, centroid(pts).y - 4 * ctx.pu / ctx.k)} ctx={ctx} size={2.2} color={bw ? '#333' : '#5a3590'} bg>{fmtArea(polyArea(pts))}</Txt>);
-    } else if (g.type === 'area' && (L.surface || e.kind === 'pond' || e.kind === 'deck' || e.kind === 'bed' || e.kind === 'terrace')) {
+    } else if (g.type === 'area' && (L.surface || e.kind === 'pond' || e.kind === 'pool' || e.kind === 'pool-kids' || e.kind === 'deck' || e.kind === 'bed' || e.kind === 'terrace')) {
       const pts = elementOutline(e);
+      const water = e.kind === 'pond' || e.kind === 'pool' || e.kind === 'pool-kids';
       node = (
         <g>
-          <path d={pathD(pts, ctx, true)} fill={fill} stroke={stroke} strokeWidth={lw(e.kind === 'pond' ? 0.4 : 0.2)} />
-          {e.kind === 'pond' && <path d={pathD(insetPolygon(pts, 150), ctx, true)} fill={tone(e.color, bw, 0.1)} stroke={stroke} strokeWidth={lw(0.15)} />}
+          <path d={pathD(pts, ctx, true)} fill={water && e.kind !== 'pond' ? tone('#d8d2c4', bw, 0.2) : fill} stroke={stroke} strokeWidth={lw(water ? 0.4 : 0.2)} />
+          {L.surface && !bw && isRich(e.finish) && floorPattern(e.finish as FloorFinish, pts, ctx, `sp${e.id}`)}
+          {water && <path d={pathD(insetPolygon(pts, e.kind === 'pond' ? 150 : 300), ctx, true)} fill={tone(e.color, bw, 0.1)} stroke={stroke} strokeWidth={lw(0.15)} />}
           {e.kind === 'bed' && <path d={pathD(insetPolygon(pts, 120), ctx, true)} fill="none" stroke={stroke} strokeWidth={lw(0.15)} />}
           {e.kind === 'sport' && polyArea(pts) > 4e6 && <path d={pathD(insetPolygon(pts, 1000), ctx, true)} fill="none" stroke="#fff" strokeWidth={lw(0.3)} />}
         </g>
@@ -186,6 +191,9 @@ export function renderSitePlan(d: SiteData, model: SiteModel, ctx: ViewCtx, opts
           <path d={pathD(inner, ctx, true)} fill={tone(e.color, bw, 0.4)} stroke="#111" strokeWidth={lw(0.25)} />
         </g>
       );
+    } else if (g.type === 'line' && e.kind === 'path-stepping') {
+      const s = solidsById.get(e.id);
+      node = <g>{s && primsTopView(s.prims, ctx, bw, key)}</g>;
     } else if (g.type === 'line' && e.kind === 'path') {
       node = <path d={pathD(elementOutline(e), ctx, true)} fill={fill} stroke={stroke} strokeWidth={lw(0.25)} />;
     } else if (g.type === 'line') {
@@ -193,15 +201,16 @@ export function renderSitePlan(d: SiteData, model: SiteModel, ctx: ViewCtx, opts
       if (e.kind === 'fence') {
         node = <path d={pathD(elementPath(e), ctx, false)} fill="none" stroke={stroke} strokeWidth={lw(0.35)} strokeDasharray={`${lw(3)} ${lw(0.8)}`} />;
       } else node = <path d={pathD(outline, ctx, true)} fill={e.kind === 'wall' ? (bw ? '#555' : darker(e.color, false)) : tone(e.color, bw, 0.3)} stroke={e.kind === 'wall' ? '#111' : stroke} strokeWidth={lw(e.kind === 'wall' ? 0.35 : 0.2)} />;
-    } else if (g.type === 'point' && (L.category === 'plants') && e.kind !== 'shrub' && e.kind !== 'flowers') {
+    } else if (g.type === 'point' && L.symbol === 'tree') {
       node = treeSymbol(e, ctx, bw);
-    } else if (g.type === 'point' && (e.kind === 'shrub' || e.kind === 'flowers')) {
+    } else if (g.type === 'point' && L.symbol === 'shrub') {
       const c = ctx.T(g.p);
       const r = (prm(e, 'dia') / 2) * ctx.k;
       node = (
         <g>
           <circle cx={c.x} cy={c.y} r={r} fill={tone(e.color, bw, e.kind === 'flowers' ? 0.5 : 0.3)} stroke={stroke} strokeWidth={lw(0.2)} strokeDasharray={e.kind === 'shrub' ? `${lw(0.9)} ${lw(0.4)}` : undefined} />
-          {e.kind === 'flowers' && [0, 1, 2, 3, 4].map((i) => <circle key={i} cx={c.x + r * 0.5 * Math.cos(i * 1.256)} cy={c.y + r * 0.5 * Math.sin(i * 1.256)} r={r * 0.18} fill={bw ? '#999' : '#e46f8f'} />)}
+          {(e.kind === 'flowers' || e.kind === 'shrub-oleander' || e.kind === 'shrub-lavender') && [0, 1, 2, 3, 4].map((i) => <circle key={i} cx={c.x + r * 0.5 * Math.cos(i * 1.256)} cy={c.y + r * 0.5 * Math.sin(i * 1.256)} r={r * 0.18} fill={bw ? '#999' : e.kind === 'shrub-lavender' ? '#9a8cc4' : '#e46f8f'} />)}
+          {(e.kind === 'agave' || e.kind === 'grass-ornamental') && [0, 1, 2, 3, 4, 5].map((i) => <line key={i} x1={c.x} y1={c.y} x2={c.x + r * Math.cos(i * 1.047)} y2={c.y + r * Math.sin(i * 1.047)} stroke={stroke} strokeWidth={lw(0.15)} />)}
         </g>
       );
     } else if (e.kind === 'text' && g.type === 'point') {

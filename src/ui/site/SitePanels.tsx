@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { create } from 'zustand';
 import { useStore } from '../../document/store';
 import { uid } from '../../document/factory';
 import type { Project } from '../../document/types';
@@ -9,7 +10,7 @@ import { Icons } from '../icons';
 import { fileToImages, UploadError } from '../imageTools';
 import { ACCEPT_UPLOAD } from '../Home';
 import type { SiteData, SiteElement, MaterialId } from '../../site/types';
-import { CATEGORIES, LIBRARY, MATERIALS, lib, makeElement, prm, type LibItem } from '../../site/library';
+import { CATEGORIES, LIBRARY, MATERIALS, lib, makeElement, prm, searchLibrary, type LibItem } from '../../site/library';
 import { emptySite } from '../../site/migrate';
 import { buildSiteModel, type SiteModel } from '../../site/section';
 import { renderSitePlan } from '../../site/render/plan';
@@ -22,6 +23,21 @@ import { ZSOURCE_LABELS } from '../../site/terrain';
 import { MField } from './fields';
 import { setAdvanced, useSiteUi } from './siteUi';
 import { provisionalScale } from './PlanEditor';
+import { MaterialPicker } from '../materials/MaterialPicker';
+import { resolveFinish, richFinish } from '../../materials/finish';
+
+/** 4.0: the catalogue material that matches a 3.0 site material, as a starting point for textures. */
+function defaultFinish(e: SiteElement): string {
+  const L = lib(e.kind);
+  if (L.finish) return L.finish;
+  const surf = !!L.surface;
+  const map: Record<MaterialId, string> = {
+    grass: 'grass-natural', planting: 'groundcover', soil: 'soil', gravel: 'gravel', concrete: surf ? 'paving-concrete' : 'concrete', paving: 'pavers',
+    stone: surf ? 'paving-stone' : 'stone', wood: surf ? 'deck-wood' : 'wood', metal: 'metal', plaster: 'plaster', water: 'water-pool', foliage: 'groundcover',
+    bark: 'wood', rubber: 'rubber-safety', glass: 'glass', none: 'concrete',
+  };
+  return map[e.material] ?? 'concrete';
+}
 
 type SProject = Extract<Project, { type: 'site' }>;
 type SetData = (fn: (d: SiteData) => SiteData, record?: boolean) => void;
@@ -50,34 +66,66 @@ function LibPreview({ item }: { item: LibItem }) {
   return <>{node}</>;
 }
 
+const SFAV = 'archicut-fav-site', SREC = 'archicut-recent-site';
+const readL = (k: string): string[] => { try { const v = JSON.parse(localStorage.getItem(k) ?? '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch { return []; } };
+const writeL = (k: string, v: string[]) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
+/** 4.0: favourite and recently used site items (kept in this browser only). */
+const useSiteLibPrefs = create<{ fav: string[]; recent: string[]; toggle(kind: string): void; used(kind: string): void }>((set, get) => ({
+  fav: readL(SFAV),
+  recent: readL(SREC),
+  toggle(kind) { const f = get().fav.includes(kind) ? get().fav.filter((x) => x !== kind) : [kind, ...get().fav]; writeL(SFAV, f); set({ fav: f }); },
+  used(kind) { const r = [kind, ...get().recent.filter((x) => x !== kind)].slice(0, 12); writeL(SREC, r); set({ recent: r }); },
+}));
+
 export function LibraryPanel() {
   const tool = useSiteUi((s) => s.tool);
   const [open, setOpen] = useState<string>('site');
   const [q, setQ] = useState('');
-  const items = q.trim() ? LIBRARY.filter((l) => l.label.includes(q.trim()) || l.desc.includes(q.trim())) : null;
-  const pick = (kind: string) => useSiteUi.getState().setTool({ t: 'place', kind });
-  const grid = (list: LibItem[]) => (
-    <div className="lib-grid">
-      {list.map((l) => (
-        <button key={l.kind} className={`lib-item ${tool.t === 'place' && tool.kind === l.kind ? 'on' : ''}`} onClick={() => pick(l.kind)} title={l.desc} aria-pressed={tool.t === 'place' && tool.kind === l.kind}>
+  const [view, setView] = useState<'all' | 'fav' | 'recent'>('all');
+  const prefs = useSiteLibPrefs();
+  const items = q.trim() ? searchLibrary(q) : null;
+  const pick = (kind: string) => { prefs.used(kind); useSiteUi.getState().setTool({ t: 'place', kind }); };
+  const one = (l: LibItem) => {
+    const fav = prefs.fav.includes(l.kind);
+    return (
+      <div key={l.kind} style={{ position: 'relative' }}>
+        <button className={`lib-item ${tool.t === 'place' && tool.kind === l.kind ? 'on' : ''}`} style={{ width: '100%' }} onClick={() => pick(l.kind)} title={l.note ? `${l.desc} ${l.note}` : l.desc} aria-pressed={tool.t === 'place' && tool.kind === l.kind}>
           <LibPreview item={l} />
           <span>{l.label}</span>
         </button>
-      ))}
-    </div>
-  );
+        <button type="button" className="lib-star" aria-pressed={fav} aria-label={fav ? `הסרה מהמועדפים: ${l.label}` : `הוספה למועדפים: ${l.label}`} onClick={() => prefs.toggle(l.kind)}>{fav ? '★' : '☆'}</button>
+      </div>
+    );
+  };
+  const grid = (list: LibItem[], grouped = false) => {
+    if (!grouped) return <div className="lib-grid">{list.map(one)}</div>;
+    const subs = [...new Set(list.map((l) => l.sub ?? ''))];
+    return <div className="lib-grid">{subs.flatMap((sb) => [sb ? <div key={`h${sb}`} className="lib-sub">{sb}</div> : null, ...list.filter((l) => (l.sub ?? '') === sb).map(one)])}</div>;
+  };
+  const special = view === 'fav' ? prefs.fav : view === 'recent' ? prefs.recent : null;
+  const specialList = special ? special.map((k) => LIBRARY.find((l) => l.kind === k)).filter((l): l is LibItem => !!l) : null;
   return (
     <div className="panel-section">
-      <h3>ספריית אלמנטים</h3>
-      <input className="input" placeholder="חיפוש: עץ, ספסל, מדרגות…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="חיפוש בספרייה" />
-      {items ? (items.length ? grid(items) : <span className="small muted">לא נמצא אלמנט כזה.</span>) : CATEGORIES.map((c) => (
-        <div key={c.id} className="lib-cat">
-          <button className="lib-cat-head" aria-expanded={open === c.id} onClick={() => setOpen(open === c.id ? '' : c.id)}>
-            <span>{c.label}</span><span className="muted small">{LIBRARY.filter((l) => l.category === c.id).length}</span>
-          </button>
-          {open === c.id && grid(LIBRARY.filter((l) => l.category === c.id))}
-        </div>
-      ))}
+      <h3>ספריית אלמנטים ({LIBRARY.length})</h3>
+      <input className="input" placeholder="חיפוש: עץ זית, ספסל, נדנדה, שער…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="חיפוש בספרייה" />
+      <div className="lib-filters">
+        {(['all', 'fav', 'recent'] as const).map((v) => <button key={v} type="button" className={`chip ${view === v ? 'on' : ''}`} aria-pressed={view === v} onClick={() => setView(v)}>{v === 'all' ? 'לפי קטגוריה' : v === 'fav' ? `★ מועדפים (${prefs.fav.length})` : 'אחרונים'}</button>)}
+      </div>
+      {items ? (items.length ? grid(items) : <span className="small muted">לא נמצא אלמנט כזה. נסי מילה אחרת.</span>)
+        : specialList ? (specialList.length ? grid(specialList) : <span className="small muted">{view === 'fav' ? 'סמני ☆ ליד אלמנט כדי להוסיף אותו למועדפים.' : 'עדיין לא נבחרו אלמנטים.'}</span>)
+          : CATEGORIES.map((c) => {
+            const list = LIBRARY.filter((l) => l.category === c.id);
+            if (!list.length) return null;
+            return (
+              <div key={c.id} className="lib-cat">
+                <button className="lib-cat-head" aria-expanded={open === c.id} onClick={() => setOpen(open === c.id ? '' : c.id)}>
+                  <span>{c.label}</span><span className="muted small">{list.length}</span>
+                </button>
+                {open === c.id && grid(list, true)}
+              </div>
+            );
+          })}
+      <span className="small muted">המידות הן ערכי התחלה מקובלים לתרגול וניתנות לשינוי. מתקני משחק, מקלטים ומבנים הם להמחשה בלבד ואינם אישור הנדסי או בטיחותי.</span>
     </div>
   );
 }
@@ -203,14 +251,27 @@ export function PropertiesPanel({ project, model, setData }: { project: SProject
         </div>
       )}
       {L.solid && (
-        <div className="grid2">
-          <label className="field"><span>חומר</span>
-            <select className="input" value={e.material} onChange={(ev) => { const m = ev.target.value as MaterialId; upd(e.id, (x) => ({ ...x, material: m, color: MATERIALS[m].color })); }}>
-              {Object.entries(MATERIALS).filter(([k]) => k !== 'none').map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
-            </select>
-          </label>
-          <label className="field"><span>צבע</span><input className="input color-input" type="color" value={e.color} onFocus={onStart} onChange={(ev) => upd(e.id, (x) => ({ ...x, color: ev.target.value }), false)} aria-label="צבע" /></label>
-        </div>
+        <>
+          <div className="grid2">
+            <label className="field"><span>{e.finish ? 'סוג החומר (לחתכים)' : 'חומר'}</span>
+              <select className="input" value={e.material} onChange={(ev) => { const m = ev.target.value as MaterialId; upd(e.id, (x) => ({ ...x, material: m, ...(x.finish ? {} : { color: MATERIALS[m].color }) })); }}>
+                {Object.entries(MATERIALS).filter(([k]) => k !== 'none').map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+              </select>
+            </label>
+            {!e.finish && <label className="field"><span>צבע</span><input className="input color-input" type="color" value={e.color} onFocus={onStart} onChange={(ev) => upd(e.id, (x) => ({ ...x, color: ev.target.value }), false)} aria-label="צבע" /></label>}
+            {(L.color2 || e.color2) && <label className="field"><span>צבע משני</span><input className="input color-input" type="color" value={e.color2 ?? L.color2} onFocus={onStart} onChange={(ev) => upd(e.id, (x) => ({ ...x, color2: ev.target.value }), false)} aria-label="צבע משני" /></label>}
+          </div>
+          {e.finish ? (
+            <>
+              <MaterialPicker label="חומר וטקסטורה (4.0)" value={e.finish} use={L.surface ? 'outdoor' : ['outdoor', 'object', 'wall']} projectId={project.id} adv={advanced} testId="site-finish"
+                onChange={(f, rec) => upd(e.id, (x) => ({ ...x, finish: f, color: resolveFinish(f).spec.color }), rec)} />
+              <button type="button" className="btn sm ghost" onClick={() => upd(e.id, (x) => { const { finish: _drop, ...rest } = x; void _drop; return rest; })}>ללא טקסטורה (צבע בלבד, כמו בגרסה 3.0)</button>
+            </>
+          ) : (
+            <button type="button" className="btn sm" onClick={() => upd(e.id, (x) => ({ ...x, finish: richFinish(defaultFinish(x), x.color) }))}>בחירת חומר וטקסטורה (4.0)</button>
+          )}
+          {L.note && <div className="note-demo">{L.note}</div>}
+        </>
       )}
       <label className="field"><span>שכבה</span>
         <select className="input" value={e.layer} onChange={(ev) => upd(e.id, (x) => ({ ...x, layer: ev.target.value }))}>

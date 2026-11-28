@@ -4,7 +4,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { CATALOG, LAYOUT_LABELS, MAT_CATS, PALETTES, isHex, mat, matsFor, searchMats, type MatCat, type MatDef, type MatUse } from '../../materials/catalog';
+import { CATALOG, LAYOUT_LABELS, MAT_CATS, PALETTES, isHex, mat, searchMats, type MatCat, type MatDef, type MatUse } from '../../materials/catalog';
 import { GLOSS, layoutsFor, resolveFinish, richFinish, type FinishLike } from '../../materials/finish';
 import { thumbUrl } from '../../materials/texture';
 import { MField } from '../site/fields';
@@ -59,7 +59,8 @@ const defThumb = (m: MatDef) => thumbUrl(resolveFinish({ material: m.id, color: 
 interface Props {
   label: string;
   value: FinishLike;
-  use: MatUse;
+  /** Where the material goes; several uses show the materials of any of them. */
+  use: MatUse | MatUse[];
   kind?: FinishKind;
   onChange: (f: FinishLike, record?: boolean) => void;
   projectId: string;
@@ -81,13 +82,15 @@ export function MaterialPicker({ label, value, use, kind = 'finish', onChange, p
   const def = r.def;
   const [tw, th] = sizeOf(value);
   const rich = value.v === 4;
-  const cats = useMemo(() => MAT_CATS.filter((c) => CATALOG.some((m) => m.cat === c.id && m.use.includes(use))), [use]);
+  const useKey = Array.isArray(use) ? use.join(',') : use;
+  const fits = useMemo(() => { const us = useKey.split(',') as MatUse[]; return (m: MatDef) => m.use.some((u) => us.includes(u)); }, [useKey]);
+  const cats = useMemo(() => MAT_CATS.filter((c) => CATALOG.some((m) => m.cat === c.id && fits(m))), [fits]);
   const list = useMemo(() => {
-    const base = q.trim() ? searchMats(q, use) : matsFor(use);
-    if (cat === 'fav') return prefs.fav.map((id) => CATALOG.find((m) => m.id === id)).filter((m): m is MatDef => !!m && m.use.includes(use));
-    if (cat === 'recent') return prefs.recent.map((id) => CATALOG.find((m) => m.id === id)).filter((m): m is MatDef => !!m && m.use.includes(use));
+    const base = q.trim() ? searchMats(q).filter(fits) : CATALOG.filter(fits);
+    if (cat === 'fav') return prefs.fav.map((id) => CATALOG.find((m) => m.id === id)).filter((m): m is MatDef => !!m && fits(m));
+    if (cat === 'recent') return prefs.recent.map((id) => CATALOG.find((m) => m.id === id)).filter((m): m is MatDef => !!m && fits(m));
     return cat === 'all' ? base : base.filter((m) => m.cat === cat);
-  }, [q, use, cat, prefs.fav, prefs.recent]);
+  }, [q, fits, cat, prefs.fav, prefs.recent]);
   const set = (patch: Partial<FinishLike>, record = true) => onChange({ ...(rich ? value : makeFinish(kind, value.material, value.color, value.angle ?? 0)), ...patch, v: 4 }, record);
   const pick = (m: MatDef) => { prefs.used(m.id); onChange({ ...makeFinish(kind, m.id, undefined, value.angle ?? 0) }); };
   const textured = r.textured && !r.img;
