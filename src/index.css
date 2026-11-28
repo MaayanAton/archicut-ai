@@ -389,3 +389,5 @@ kbd { display: inline-block; min-width: 24px; padding: 1px 6px; border: 1px soli
 .el-common { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .note-demo { border-inline-start: 3px solid #c77b12; background: #fff7ea; color: #6a3d06; padding: 6px 8px; border-radius: 6px; font-size: 12px; line-height: 1.4; }
 @media (max-width: 520px) { .mat-grid { grid-template-columns: repeat(3, 1fr); } }
+.lib-star { position: absolute; top: 2px; inset-inline-end: 2px; width: 26px; height: 26px; border: 0; background: transparent; color: #c78a00; font-size: 15px; cursor: pointer; border-radius: 6px; }
+.lib-star:hover { background: var(--surface-2); }

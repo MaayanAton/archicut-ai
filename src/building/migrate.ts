@@ -37,11 +37,16 @@ const VARIANTS = new Set(['passage', 'barn', 'protected', 'deco', 'grid', 'niche
 const isStr = (x: unknown): x is string => typeof x === 'string';
 
 /** A finish with its 4.0 fields checked: fields of the wrong type are dropped, the 3.0 fields are kept as they are. */
+const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
 export function cleanFinish<T extends { material: string; color: string }>(f: unknown, fallback: T): T {
   if (!isObj(f) || !isStr(f.material) || !isStr(f.color)) return fallback;
   const out: Record<string, unknown> = { ...f };
+  if (!HEX.test(f.color)) out.color = fallback.color;
   for (const k of ['tw', 'th', 'tileW', 'tileH', 'angle', 'groutW', 'rough', 'metal', 'opacity']) if (k in out && !isNum(out[k])) delete out[k];
+  for (const k of ['tw', 'th', 'tileW', 'tileH']) if (k in out && !((out[k] as number) > 0)) delete out[k];
   for (const k of ['color2', 'grout', 'img', 'layout']) if (k in out && !isStr(out[k])) delete out[k];
+  for (const k of ['color2', 'grout']) if (k in out && !HEX.test(out[k] as string)) delete out[k];
   if ('v' in out && out.v !== 4) delete out.v;
   return out as T;
 }
@@ -115,8 +120,10 @@ export function migrateBuilding(raw: unknown, newId: () => string): { data: Buil
     furniture: keep(raw.furniture, (x) => onLevel(x) && isVec(x.p) && typeof x.kind === 'string', (x) => {
       const f = clean4({ name: '', rot: 0, w: 500, d: 500, h: 500, elev: 0, color: '#999999', color2: '#777777', material: 'paint', ...(x as object), phase: phase(x.phase) }) as BuildingData['furniture'][number];
       if ('mats' in f && !(Array.isArray(f.mats) && f.mats.every((m) => m === null || isStr(m)))) delete f.mats;
-      if ('color3' in f && !isStr(f.color3)) delete f.color3;
-      if ('light' in f) { const l = f.light as unknown; if (isObj(l)) f.light = { on: l.on !== false, dim: isNum(l.dim) ? Math.max(0, Math.min(1, l.dim)) : 1, temp: isStr(l.temp) ? l.temp : 'warm' }; else delete f.light; }
+      if (!isStr(f.color) || !HEX.test(f.color)) f.color = '#999999';
+      if (!isStr(f.color2) || !HEX.test(f.color2)) f.color2 = '#777777';
+      if ('color3' in f && !(isStr(f.color3) && HEX.test(f.color3))) delete f.color3;
+      if ('light' in f) { const l = f.light as unknown; if (isObj(l)) f.light = { on: l.on !== false, dim: isNum(l.dim) ? Math.max(0, Math.min(1, l.dim)) : 1, temp: isStr(l.temp) && (['warm', 'neutral', 'cold'].includes(l.temp) || HEX.test(l.temp)) ? l.temp : 'warm' }; else delete f.light; }
       return f;
     }),
     columns: keep(raw.columns, (x) => onLevel(x) && isVec(x.p), (x) => ({ w: 300, d: 300, round: false, rot: 0, height: null, color: '#cfcac0', ...(x as object), phase: phase(x.phase) }) as BuildingData['columns'][number]),

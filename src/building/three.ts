@@ -162,6 +162,8 @@ function prismInto(pr: Extract<BPrim, { t: 'prism' }>, out: Buckets) {
 
 /** Builds one group per solid: one mesh per material. Groups are cached by their content. */
 const groupCache = new Map<string, THREE.Group>();
+/** Drops the cached groups (after the texture quality changes). */
+export function clearGroupCache() { for (const g of groupCache.values()) g.traverse((o) => (o as THREE.Mesh).geometry?.dispose()); groupCache.clear(); }
 export function solidGroup(s: BSolid): THREE.Group {
   const key = `${s.id}|${JSON.stringify(s.prims)}`;
   const hit = groupCache.get(key);

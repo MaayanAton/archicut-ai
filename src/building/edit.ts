@@ -37,6 +37,13 @@ export function elLevel(d: BuildingData, id: string): string | null {
 }
 
 /** Is an element locked (by itself or by its layer)? Locked elements are not moved, rotated or deleted. */
+/** Deletes the elements that are not locked; returns the locked ones (they stay selected) and a message. */
+export function deleteUnlocked(d: BuildingData, ids: string[]): { data: BuildingData; kept: string[]; note: string | null } {
+  const kept = ids.filter((id) => isLocked(d, id));
+  const note = !kept.length ? null : kept.length === ids.length ? 'האלמנט נעול ולכן לא נמחק. לשחרור: כפתור "נעול" במאפיינים.' : `${kept.length} אלמנטים נעולים לא נמחקו.`;
+  return { data: deleteIds(d, ids), kept, note };
+}
+
 export function isLocked(d: BuildingData, id: string): boolean {
   const f = findEl(d, id);
   if (!f) return false;

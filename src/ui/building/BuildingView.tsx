@@ -11,12 +11,15 @@ import { fmtArea } from '../../site/units';
 import { SLAB_KIND_LABELS, VIEW_STATE_LABELS, type BuildingData, type SlabKind } from '../../building/types';
 import { buildModel, sortedLevels } from '../../building/model';
 import { openingDef } from '../../building/openings';
-import { deleteIds, duplicateIds, elLevel, rotateIds, selectionCenter, translateIds } from '../../building/edit';
+import { deleteUnlocked, duplicateIds, elLevel, rotateIds, selectionCenter, translateIds } from '../../building/edit';
 import { PlanEditor, type SetB } from './PlanEditor';
 import {
-  BModeToggle, BPanelAside, BackgroundPanel, FurnitureLibrary, HouseDialog, LevelsPanel, OpeningPalette, PropertiesPanel,
+  BModeToggle, BPanelAside, BackgroundPanel, HouseDialog, LevelsPanel, OpeningPalette, PropertiesPanel,
   RenovationPanel, SettingsPanel, SiteLinkPanel, WallToolPanel, WarningsPanel, createRectHouse,
 } from './Panels';
+import { FurnitureLibrary, OpeningPresets } from './Library4';
+import { LayersPanel } from './Design4';
+import { SafeRoomDialog } from './SafeRoom';
 import { TablesTab } from './TablesTab';
 import { Building3D } from './Building3D';
 import { SectionsTab } from './SectionsTab';
@@ -38,6 +41,7 @@ export function BuildingView({ project }: { project: BProject }) {
   const ui = useBldUi();
   const [help, setHelp] = useState(false);
   const [house, setHouse] = useState<null | 'outside' | 'inside'>(null);
+  const [safe, setSafe] = useState(false);
   const sorted = sortedLevels(d);
   useEffect(() => { ui.reset(project.id, (sorted.find((l) => l.elevation >= -1) ?? sorted[0]).id, d.renovation); }, [project.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // The active level must exist (it can be deleted, or undo can remove it).
@@ -70,8 +74,10 @@ export function BuildingView({ project }: { project: BProject }) {
       const mod = e.ctrlKey || e.metaKey;
       if ((e.key === 'Delete' || (e.key === 'Backspace' && s.tool.t === 'select')) && sel.length) {
         e.preventDefault();
-        setData((x) => deleteIds(x, sel));
-        s.select([]);
+        const r = deleteUnlocked(data, sel);
+        setData(() => r.data);
+        s.select(r.kept);
+        if (r.note) toast(r.note);
       } else if (mod && e.key.toLowerCase() === 'd' && sel.length) {
         e.preventDefault();
         const off = Math.max(data.grid.size, 500);
@@ -115,7 +121,13 @@ export function BuildingView({ project }: { project: BProject }) {
   const toolPanel = (): ReactNode => {
     const t = ui.tool;
     if (t.t === 'wall') return <WallToolPanel />;
-    if (t.t === 'opening') return <OpeningPalette />;
+    if (t.t === 'opening') return <><OpeningPresets /><OpeningPalette /></>;
+    if (t.t === 'floorZone') return (
+      <div className="panel-section active-tool">
+        <h3>{Icons.slab} אזור רצפה</h3>
+        <span className="small muted">לחצי על פינות האזור (למשל שטיח אריחים בתוך פרקט, רצועת מטבח) וסיימי ב-Enter. אחר כך בחרי לו חומר. האזור אינו משנה את שטח החדר.</span>
+      </div>
+    );
     if (t.t === 'furniture') return <FurnitureLibrary />;
     if (t.t === 'slab') return (
       <div className="panel-section active-tool">
@@ -170,6 +182,12 @@ export function BuildingView({ project }: { project: BProject }) {
               <LevelsPanel project={project} setData={setData} />
               <RenovationPanel project={project} setData={setData} />
               <BackgroundPanel project={project} setData={setData} />
+              <div className="panel-section">
+                <h3>{Icons.house} תבניות לימודיות (4.0)</h3>
+                <button className="btn sm" onClick={() => setSafe(true)}>ממ״ד לימודי (להמחשה בלבד)</button>
+                <span className="small muted">תבנית לתרגול תכנון בלבד, במידות לדוגמה. אינה תקנית ואינה מאושרת.</span>
+              </div>
+              {ui.advanced && <LayersPanel project={project} setData={setData} />}
               <SettingsPanel project={project} setData={setData} />
               <SiteLinkPanel project={project} />
             </>
@@ -213,6 +231,7 @@ export function BuildingView({ project }: { project: BProject }) {
       {tab === 'tables' && <TablesTab project={project} model={model} />}
       {tab === 'sheets' && <SheetsTab project={project} setData={setData} />}
       {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
+      {safe && <SafeRoomDialog project={project} levelId={levelId} setData={setData} onClose={() => setSafe(false)} />}
       {house && <HouseDialog title={house === 'outside' ? 'בית חדש במידות חוץ' : 'חדר במידות פנים'} interior={house === 'inside'} onClose={() => setHouse(null)} onSave={(v) => {
         const r = createRectHouse(d, levelId, v, house === 'inside');
         setData(() => r.data);
@@ -250,6 +269,7 @@ function PlanToolbar({ project, levelId }: { project: BProject; levelId: string 
       <span className="tool-sep" />
       {b({ t: 'wall' }, 'קירות', 'wall', tool.t === 'wall', 'שרטוט קירות (W)')}
       {b({ t: 'room' }, 'חדר', 'room', tool.t === 'room' || tool.t === 'roomPoly')}
+      {b({ t: 'floorZone' }, 'אזור רצפה', 'grid', tool.t === 'floorZone', 'אזור רצפה בחומר אחר')}
       {b({ t: 'opening', kind: 'door' }, 'דלת', 'door', isOpen(true), 'דלת (D)')}
       {b({ t: 'opening', kind: 'window' }, 'חלון', 'window', isOpen(false), 'חלון (N)')}
       {b({ t: 'furniture', kind: tool.t === 'furniture' ? tool.kind : 'sofa-3' }, 'ריהוט', 'sofa', tool.t === 'furniture')}

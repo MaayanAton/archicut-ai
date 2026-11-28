@@ -10,7 +10,9 @@ export type BTool =
   | { t: 'wall' }
   | { t: 'room' }
   | { t: 'roomPoly' }
-  | { t: 'opening'; kind: OpeningKind }
+  | { t: 'opening'; kind: OpeningKind; preset?: string }
+  /** 4.0: a part of a floor with its own finish. */
+  | { t: 'floorZone' }
   | { t: 'furniture'; kind: string }
   | { t: 'stair' }
   | { t: 'column' }

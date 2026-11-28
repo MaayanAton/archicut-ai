@@ -2,9 +2,9 @@ import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../../document/store';
 import { uid } from '../../document/factory';
 import type { Project } from '../../document/types';
-import { type Vec2, v2 } from '../../geometry/vec';
+import { v2 } from '../../geometry/vec';
 import { makeView } from '../../drawing/viewport';
-import { add, dot, mul, norm, polyArea, sub } from '../../site/poly';
+import { add, mul, norm, polyArea, sub } from '../../site/poly';
 import { fmtArea, fmtLevel, fmtM, mToStr } from '../../site/units';
 import { Check, Dialog, NumberField, Seg, confirmDialog, toast } from '../common';
 import { Icons } from '../icons';
@@ -14,21 +14,25 @@ import { ImageEditDialog } from '../drawing/ImageEditDialog';
 import { MField } from '../site/fields';
 import {
   LEVEL_KIND_LABELS, PHASE_LABELS, ROOF_SHAPE_LABELS, SLAB_KIND_LABELS, STAIR_SHAPE_LABELS, VIEW_STATE_LABELS, WALL_KIND_LABELS,
-  type BuildingData, type Furniture, type Level, type LevelKind, type Opening, type OpeningKind, type Phase, type Room, type Wall,
+  OPENING_SHAPE_LABELS, type BuildingData, type Furniture, type Level, type LevelKind, type Opening, type OpeningKind, type OpeningShape, type OpeningVariant, type Phase, type Room, type Wall,
 } from '../../building/types';
 import { levelOf, sortedLevels, type BuildingModel } from '../../building/model';
-import { EL_LABELS, deleteIds, duplicateIds, findEl, rectWalls, rotateIds, selectionCenter, setPhase, type ElType } from '../../building/edit';
-import { checkWallOpenings, OPENINGS, openingDef, wallLength } from '../../building/openings';
-import { FURNITURE, FURN_CATEGORIES, furn, searchFurniture, type FurnItem } from '../../building/furniture';
+import { EL_LABELS, deleteUnlocked, duplicateIds, findEl, rectWalls, rotateIds, selectionCenter, setPhase, type ElType } from '../../building/edit';
+import { checkWallOpenings, OPENINGS, OPENING_PRESETS, openingDef, openingLabel, wallLength } from '../../building/openings';
+import { ElCommon, FurnDesign, RoomDesign, WallDesign } from './Design4';
+import { isCurved, openingRise } from '../../building/wall4';
+import { furn, type FurnItem } from '../../building/furniture';
 import { MATERIALS, PALETTE, material, materialsFor } from '../../building/materials';
 import { stairCheck, stairGeom } from '../../building/stairs';
 import { newLevel } from '../../building/migrate';
-import { floorFinish, newRoom, newWall, WALL_DEFAULTS } from '../../building/factories';
+import { newRoom, newWall, WALL_DEFAULTS } from '../../building/factories';
 import { roofFrame } from '../../building/roofs';
 import { furnitureSymbol } from '../../building/render/plan';
 import { AREA_EXPLAIN } from '../../building/quantities';
 import { buildingFootprints, copyBuildingToSite } from '../../building/toSite';
 import { setBldAdvanced, useBldUi } from './bldUi';
+import { SAFE_ROOM_NOTE } from '../../building/safeRoom';
+import { MaterialPicker } from '../materials/MaterialPicker';
 import type { SetB } from './PlanEditor';
 
 type BProject = Extract<Project, { type: 'building' }>;
@@ -216,38 +220,6 @@ export function FurnPreview({ item }: { item: FurnItem }) {
     prevCache.set(item.kind, node);
   }
   return <>{node}</>;
-}
-
-export function FurnitureLibrary() {
-  const tool = useBldUi((s) => s.tool);
-  const [q, setQ] = useState('');
-  const [open, setOpen] = useState<string>('living');
-  const found = q.trim() ? searchFurniture(q) : null;
-  const grid = (list: FurnItem[]) => (
-    <div className="lib-grid">
-      {list.map((f) => {
-        const on = tool.t === 'furniture' && tool.kind === f.kind;
-        return (
-          <button key={f.kind} className={`lib-item ${on ? 'on' : ''}`} aria-pressed={on} title={`${f.label} – ${f.w}×${f.d}×${f.h} מ״מ`} onClick={() => useBldUi.getState().setTool({ t: 'furniture', kind: f.kind })}>
-            <FurnPreview item={f} /><span>{f.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-  return (
-    <div className="panel-section">
-      <h3>ספריית ריהוט וציוד</h3>
-      <input className="input" placeholder="חיפוש: ספה, מיטה, כיור…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="חיפוש רהיטים" />
-      {found ? (found.length ? grid(found) : <span className="small muted">לא נמצא פריט כזה.</span>) : FURN_CATEGORIES.map((c) => (
-        <div key={c.id} className="lib-cat">
-          <button className="lib-cat-head" aria-expanded={open === c.id} onClick={() => setOpen(open === c.id ? '' : c.id)}><span>{c.label}</span><span className="muted small">{FURNITURE.filter((f) => f.cat === c.id).length}</span></button>
-          {open === c.id && grid(FURNITURE.filter((f) => f.cat === c.id))}
-        </div>
-      ))}
-      <span className="small muted">המידות הן ברירת מחדל מקובלת וניתנות לשינוי אחרי ההצבה.</span>
-    </div>
-  );
 }
 
 export function OpeningPalette() {
@@ -470,7 +442,7 @@ export function PropertiesPanel({ project, model, setData }: { project: BProject
   const els = sel.map((id) => findEl(d, id)).filter((x): x is NonNullable<typeof x> => !!x);
   if (!els.length) return null;
   const pid = project.id;
-  const del = () => { setData((dd) => deleteIds(dd, sel)); useBldUi.getState().select([]); };
+  const del = () => { const r = deleteUnlocked(d, sel); setData(() => r.data); useBldUi.getState().select(r.kept); if (r.note) toast(r.note); };
   const dup = () => { const r = duplicateIds(d, sel, v2(500, -500), uid); setData(() => r.data); useBldUi.getState().select(r.ids); };
   const rot = (deg: number) => setData((dd) => rotateIds(dd, sel, deg, selectionCenter(dd, sel)));
   const actions = (
@@ -484,6 +456,8 @@ export function PropertiesPanel({ project, model, setData }: { project: BProject
     return (
       <div className="panel-section">
         <h3>{els.length} אלמנטים נבחרו</h3>
+        <ElCommon ids={sel} project={project} setData={setData} />
+        <MultiColor els={els.map((e) => e.el as { id: string; color?: string })} setData={setData} projectId={project.id} />
         {d.renovation && <PhaseSelect value={'existing'} onChange={(p) => setData((dd) => setPhase(dd, sel, p))} />}
         {actions}
         <button className="btn sm ghost" onClick={() => useBldUi.getState().select([])}>ביטול הבחירה</button>
@@ -494,17 +468,20 @@ export function PropertiesPanel({ project, model, setData }: { project: BProject
   const title = EL_LABELS[type as ElType];
   const body = (() => {
     switch (type) {
-      case 'wall': return <WallProps w={el as Wall} project={project} setData={setData} adv={adv} />;
-      case 'opening': return <OpeningProps o={el as Opening} project={project} setData={setData} />;
-      case 'room': return <RoomProps r={el as Room} project={project} model={model} setData={setData} />;
+      case 'wall': return <WallProps w={el as Wall} project={project} model={model} setData={setData} adv={adv} />;
+      case 'opening': return <OpeningProps o={el as Opening} project={project} setData={setData} adv={adv} />;
+      case 'room': return <RoomProps r={el as Room} project={project} model={model} setData={setData} adv={adv} />;
       case 'furniture': return <FurnProps f={el as Furniture} project={project} setData={setData} adv={adv} />;
+      case 'floorZone': return <FloorZoneProps id={el.id} project={project} setData={setData} adv={adv} />;
       default: return <OtherProps id={el.id} type={type} project={project} setData={setData} />;
     }
   })();
   const phaseOf = (el as { phase?: Phase }).phase;
   return (
     <div className="panel-section">
-      <h3>{title}{type === 'furniture' ? `: ${furn((el as Furniture).kind).label}` : type === 'opening' ? `: ${openingDef((el as Opening).kind).label}` : ''}</h3>
+      <h3>{title}{type === 'furniture' ? `: ${furn((el as Furniture).kind).label}` : type === 'opening' ? `: ${openingLabel(el as Opening)}` : ''}</h3>
+      <ElCommon ids={sel} project={project} setData={setData} />
+      {(el as { locked?: boolean }).locked && <span className="small muted">האלמנט נעול: אי אפשר להזיז, לסובב או למחוק אותו עד ששוחררה הנעילה. אפשר לשנות מאפיינים.</span>}
       {body}
       {d.renovation && phaseOf && <PhaseSelect value={phaseOf} onChange={(p) => setData((dd) => setPhase(dd, sel, p))} />}
       {actions}
@@ -518,7 +495,7 @@ function useUpd<T extends { id: string }>(setData: SetB, key: keyof BuildingData
   return (id: string, patch: Partial<T>, record = true) => setData((dd) => ({ ...dd, [key]: (dd[key] as unknown as T[]).map((x) => (x.id === id ? { ...x, ...patch } : x)) }), record);
 }
 
-function WallProps({ w, project, setData, adv }: { w: Wall; project: BProject; setData: SetB; adv: boolean }) {
+function WallProps({ w, project, model, setData, adv }: { w: Wall; project: BProject; model: BuildingModel; setData: SetB; adv: boolean }) {
   const d = project.data;
   const level = levelOf(d, w.levelId);
   const upd = useUpd<Wall>(setData, 'walls');
@@ -551,12 +528,7 @@ function WallProps({ w, project, setData, adv }: { w: Wall; project: BProject; s
           <MField label="סוף Y" value={w.b.y} allowNegative onChange={(y) => change({ b: v2(w.b.x, y) })} />
         </div>
       )}
-      <div className="grid2">
-        <MatSelect label="גימור פן שמאל" use="wall" value={w.left.material} onChange={(m) => upd(w.id, { left: { material: m, color: material(m).color } })} />
-        <MatSelect label="גימור פן ימין" use="wall" value={w.right.material} onChange={(m) => upd(w.id, { right: { material: m, color: material(m).color } })} />
-      </div>
-      <ColorField label="צבע פן שמאל (לכיוון ההתחלה→סוף)" value={w.left.color} projectId={project.id} onChange={(c, r) => upd(w.id, { left: { ...w.left, color: c } }, r)} />
-      <ColorField label="צבע פן ימין" value={w.right.color} projectId={project.id} onChange={(c, r) => upd(w.id, { right: { ...w.right, color: c } }, r)} />
+      <WallDesign w={w} project={project} model={model} setData={setData} adv={adv} />
       <Measures items={[['פתחים בקיר', String(ops.length)], ['שטח פן', fmtArea(L * (w.height ?? level.ceilingHeight) - ops.reduce((a, o) => a + o.width * o.height, 0))]]} />
       <div className="row">
         <button className="btn sm" onClick={() => useBldUi.getState().setTool({ t: 'opening', kind: 'door' })}>{Icons.plus} דלת</button>
@@ -567,7 +539,7 @@ function WallProps({ w, project, setData, adv }: { w: Wall; project: BProject; s
   );
 }
 
-function OpeningProps({ o, project, setData }: { o: Opening; project: BProject; setData: SetB }) {
+function OpeningProps({ o, project, setData, adv }: { o: Opening; project: BProject; setData: SetB; adv: boolean }) {
   const d = project.data;
   const w = d.walls.find((x) => x.id === o.wallId);
   if (!w) return null;
@@ -598,40 +570,51 @@ function OpeningProps({ o, project, setData }: { o: Opening; project: BProject; 
           {def.style === 'swing' && <label className="field"><span>צד הצירים</span><Seg value={o.hinge} options={[{ v: 'start', label: 'ליד תחילת הקיר' }, { v: 'end', label: 'ליד סוף הקיר' }]} onChange={(v) => change({ hinge: v })} ariaLabel="צד הצירים" /></label>}
         </>
       )}
+      <h3 style={{ marginTop: 6 }}>צורה ועיצוב (4.0)</h3>
+      <label className="field"><span>עיצוב מוכן</span>
+        <select className="input" value={o.preset ?? ''} aria-label="עיצוב מוכן לפתח" onChange={(e) => {
+          const pr = OPENING_PRESETS.find((x) => x.id === e.target.value);
+          if (!pr) return;
+          change({ kind: pr.kind, preset: pr.id, shape: pr.shape && pr.shape !== 'rect' ? pr.shape : undefined, variant: pr.variant, rise: pr.rise, depth: pr.depth, width: pr.w, height: pr.h, sill: pr.sill, color: pr.color ?? o.color, leaf: pr.leaf, glass: pr.glass });
+        }}>
+          <option value="">{o.preset ? '' : 'בחרי עיצוב…'}</option>
+          {(['דלתות', 'חלונות', 'מעברים ונישות'] as const).map((g) => <optgroup key={g} label={g}>{OPENING_PRESETS.filter((x) => x.group === g).map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</optgroup>)}
+        </select>
+      </label>
+      <label className="field"><span>צורת הפתח</span>
+        <select className="input" value={o.shape ?? 'rect'} aria-label="צורת הפתח" onChange={(e) => { const sh = e.target.value as OpeningShape; change({ shape: sh === 'rect' ? undefined : sh, ...(sh === 'round' ? { height: o.width } : {}) }); }}>
+          {(Object.keys(OPENING_SHAPE_LABELS) as OpeningShape[]).map((k) => <option key={k} value={k}>{OPENING_SHAPE_LABELS[k]}</option>)}
+        </select>
+      </label>
+      {(o.shape === 'segment' || o.shape === 'pointed' || o.shape === 'ellipse') && <MField label="גובה הקשת (מעל קו הזינוק)" value={openingRise(o)} min={20} max={o.height - 10} onChange={(v) => change({ rise: v })} />}
+      <label className="field"><span>סוג מיוחד</span>
+        <select className="input" value={o.variant ?? ''} aria-label="סוג מיוחד של פתח" onChange={(e) => change({ variant: (e.target.value || undefined) as OpeningVariant | undefined })}>
+          <option value="">רגיל</option>
+          <option value="passage">מעבר פתוח (בלי דלת ומשקוף)</option>
+          <option value="niche">נישה (לא עוברת את הקיר)</option>
+          {def.door && <option value="barn">דלת אסם על מסילה</option>}
+          {def.door && <option value="pivot">דלת ציר מרכזי</option>}
+          {def.door && <option value="protected">דלת מוגנת (להמחשה)</option>}
+          <option value="deco">מסגרת דקורטיבית</option>
+          {!def.door && <option value="grid">חלוקה דקורטיבית</option>}
+          <option value="metal">מסגרת מתכת</option>
+        </select>
+      </label>
+      {o.variant === 'niche' && <MField label="עומק הנישה" value={o.depth ?? w.thickness / 2} min={20} max={w.thickness - 20} onChange={(v) => change({ depth: v })} />}
+      {o.variant === 'protected' && <div className="note-demo">סמל של דלת מוגנת להמחשה בלבד. אינו מייצג מוצר מאושר, עמידות או דרישה של גורם מוסמך.</div>}
+      {isCurved(o) && <span className="small muted">הפתח הקשתי נחתך בקיר באמת: הוא נראה זהה בתוכנית, בתלת־ממד, בחתכים ובחזיתות.</span>}
       <div className="grid2"><MatSelect label="חומר מסגרת" use="object" value={o.material} onChange={(m) => change({ material: m })} /></div>
-      <ColorField label="צבע" value={o.color} projectId={project.id} onChange={(c, r) => change({ color: c }, r)} />
+      <ColorField label="צבע המסגרת" value={o.color} projectId={project.id} onChange={(c, r) => change({ color: c }, r)} />
+      {o.variant !== 'passage' && o.variant !== 'niche' && (adv || o.leaf) && <ColorField label={def.glass || !def.door ? 'צבע הכנף / הזכוכית' : 'צבע הכנף'} value={(def.glass || !def.door ? o.glass : o.leaf) ?? (def.glass || !def.door ? '#a9cde0' : o.color)} projectId={project.id} onChange={(c, r) => change(def.glass || !def.door ? { glass: c } : { leaf: c }, r)} />}
       <Measures items={[['ראש הפתח', fmtM(o.sill + o.height)], ['גובה הקיר', fmtM(wh)], ['אורך הקיר', fmtM(L)]]} />
     </>
   );
 }
 
-/** Paints the faces of the walls around a room (the side facing the room). */
-function roomWallColor(d: BuildingData, model: BuildingModel, r: Room, color: string, mat: string): BuildingData {
-  const lm = model.levels.find((l) => l.level.id === r.levelId);
-  if (!lm || r.mode !== 'auto') return d;
-  const f = lm.faces.filter((x) => x.area > 0).find((x) => insidePoly(r.seed, x.pts));
-  if (!f) return d;
-  const sides = new Map<string, 'left' | 'right'>();
-  f.pts.forEach((p, i) => {
-    const q = f.pts[(i + 1) % f.pts.length];
-    const w = d.walls.find((x) => x.id === f.edges[i].wallId);
-    if (!w) return;
-    // The room is on the left of the face edge; same direction as the wall = the wall's left face.
-    sides.set(w.id, dot(sub(q, p), sub(w.b, w.a)) > 0 ? 'left' : 'right');
-  });
-  return { ...d, walls: d.walls.map((w) => { const s = sides.get(w.id); return s ? { ...w, [s]: { material: mat, color } } : w; }) };
-}
-function insidePoly(p: Vec2, poly: Vec2[]) {
-  let c = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) c = !c; }
-  return c;
-}
-
-function RoomProps({ r, project, model, setData }: { r: Room; project: BProject; model: BuildingModel; setData: SetB }) {
+function RoomProps({ r, project, model, setData, adv }: { r: Room; project: BProject; model: BuildingModel; setData: SetB; adv: boolean }) {
   const d = project.data;
   const upd = useUpd<Room>(setData, 'rooms');
   const rm = model.levels.flatMap((l) => l.rooms).find((x) => x.room.id === r.id);
-  const [wallC, setWallC] = useState('#f4f1ea');
   return (
     <>
       <label className="field"><span>שם החדר</span><input className="input" value={r.name} onChange={(e) => upd(r.id, { name: e.target.value })} aria-label="שם החדר" /></label>
@@ -639,24 +622,8 @@ function RoomProps({ r, project, model, setData }: { r: Room; project: BProject;
       <span className="small muted">{AREA_EXPLAIN.net}</span>
       <span className="small muted">{r.mode === 'auto' ? 'החדר מזוהה אוטומטית מהקירות שסביבו ומתעדכן כשהם זזים.' : 'חדר בציור חופשי: גבולו נקבע לפי הנקודות שסומנו.'}</span>
       <Check checked={r.showArea} onChange={(v) => upd(r.id, { showArea: v })}>הצגת השטח בתוכנית</Check>
-      <h3 style={{ marginTop: 6 }}>ריצוף</h3>
-      <div className="grid2">
-        <MatSelect label="חומר רצפה" use="floor" value={r.floor.material} onChange={(m) => upd(r.id, { floor: floorFinish(m, undefined, r.floor.angle) })} />
-        <MField label="כיוון פריסה" kind="deg" value={r.floor.angle} allowNegative onChange={(v) => upd(r.id, { floor: { ...r.floor, angle: v } })} />
-        <MField label="אורך אריח / לוח" value={r.floor.tileW} min={0} onChange={(v) => upd(r.id, { floor: { ...r.floor, tileW: v } })} />
-        <MField label="רוחב אריח / לוח" value={r.floor.tileH} min={0} onChange={(v) => upd(r.id, { floor: { ...r.floor, tileH: v } })} />
-      </div>
-      <ColorField label="צבע הרצפה" value={r.floor.color} projectId={project.id} onChange={(c, rec) => upd(r.id, { floor: { ...r.floor, color: c } }, rec)} />
-      {r.mode === 'auto' && (
-        <>
-          <h3 style={{ marginTop: 6 }}>צבע הקירות בחדר</h3>
-          <div className="row" style={{ alignItems: 'flex-end' }}>
-            <input className="input color-input" style={{ width: 54 }} type="color" value={wallC} onChange={(e) => setWallC(e.target.value)} aria-label="צבע קירות החדר" />
-            <button className="btn sm" onClick={() => setData((dd) => roomWallColor(dd, model, r, wallC, 'paint'))}>צביעת קירות החדר</button>
-            <button className="btn sm ghost" onClick={() => setData((dd) => roomWallColor(dd, model, r, material('tile-wall').color, 'tile-wall'))}>חיפוי קרמיקה</button>
-          </div>
-        </>
-      )}
+      {r.safeRoom && <div className="note-demo" data-testid="safe-note">{SAFE_ROOM_NOTE}</div>}
+      <RoomDesign r={r} project={project} model={model} setData={setData} adv={adv} />
       {d.renovation && <label className="field"><span>קיים במצב</span><Seg value={r.state} options={[{ v: 'all', label: 'בשניהם' }, { v: 'existing', label: 'קיים בלבד' }, { v: 'proposed', label: 'מוצע בלבד' }]} onChange={(v) => upd(r.id, { state: v })} ariaLabel="מצב החדר" /></label>}
     </>
   );
@@ -676,11 +643,35 @@ function FurnProps({ f, project, setData, adv }: { f: Furniture; project: BProje
       </div>
       {adv && <div className="grid2"><MField label="מרכז X" value={f.p.x} allowNegative onChange={(x) => upd(f.id, { p: v2(x, f.p.y) })} /><MField label="מרכז Y" value={f.p.y} allowNegative onChange={(y) => upd(f.id, { p: v2(f.p.x, y) })} /></div>}
       <button className="btn sm ghost" onClick={() => upd(f.id, { w: item.w, d: item.d, h: item.h, elev: item.elev })}>חזרה למידות ברירת המחדל</button>
-      <div className="grid2"><MatSelect label="חומר" use="object" value={f.material} onChange={(m) => upd(f.id, { material: m, color: material(m).color })} /></div>
-      <ColorField label="צבע ראשי" value={f.color} projectId={project.id} onChange={(c, r) => upd(f.id, { color: c }, r)} />
-      <ColorField label="צבע משני" value={f.color2} projectId={project.id} onChange={(c, r) => upd(f.id, { color2: c }, r)} />
+      <FurnDesign f={f} project={project} setData={setData} adv={adv} />
     </>
   );
+}
+
+function FloorZoneProps({ id, project, setData, adv }: { id: string; project: BProject; setData: SetB; adv: boolean }) {
+  const z = (project.data.floorZones ?? []).find((x) => x.id === id);
+  if (!z) return null;
+  const upd = (patch: Partial<typeof z>, record = true) => setData((dd) => ({ ...dd, floorZones: (dd.floorZones ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x)) }), record);
+  return (
+    <>
+      <label className="field"><span>שם</span><input className="input" value={z.name} onChange={(e) => upd({ name: e.target.value })} aria-label="שם אזור הרצפה" /></label>
+      <Measures items={[['שטח האזור', fmtArea(polyArea(z.pts))]]} />
+      <MaterialPicker label="חומר אזור הרצפה" kind="floor" value={z.floor} use="floor" projectId={project.id} adv={adv} onChange={(f, rec) => upd({ floor: f as typeof z.floor }, rec)} />
+      <span className="small muted">אזור רצפה הוא שכבת גימור בתוך החדר: הוא אינו משנה את שטח החדר בטבלאות.</span>
+    </>
+  );
+}
+
+/** One colour for several selected elements (each keeps its own material). */
+function MultiColor({ els, setData, projectId }: { els: { id: string; color?: string }[]; setData: SetB; projectId: string }) {
+  const withColor = els.filter((e) => typeof e.color === 'string');
+  if (withColor.length < 2) return null;
+  const same = withColor.every((e) => e.color === withColor[0].color);
+  return <ColorField label={same ? 'צבע משותף' : 'צבע משותף (כעת צבעים שונים)'} value={withColor[0].color!} projectId={projectId} onChange={(c, r) => {
+    const ids = new Set(withColor.map((e) => e.id));
+    const fix = <T extends { id: string; color?: string }>(l: T[]) => l.map((x) => (ids.has(x.id) ? { ...x, color: c } : x));
+    setData((dd) => ({ ...dd, openings: fix(dd.openings), furniture: fix(dd.furniture), stairs: fix(dd.stairs), columns: fix(dd.columns), beams: fix(dd.beams), slabs: fix(dd.slabs), roofs: fix(dd.roofs) }), r);
+  }} />;
 }
 
 function OtherProps({ id, type, project, setData }: { id: string; type: ElType; project: BProject; setData: SetB }) {

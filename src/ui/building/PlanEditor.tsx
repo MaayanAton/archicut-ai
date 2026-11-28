@@ -16,8 +16,9 @@ import { levelOf } from '../../building/model';
 import { renderBuildingPlan, levelBox, furnitureSymbol, SEL } from '../../building/render/plan';
 import { findEl, hitTest, moveWallEnd, nearestWall, placeOpening, snapPoint, translateIds, type SnapKind } from '../../building/edit';
 import { faceAt } from '../../building/geom';
-import { newBeam, newColumn, newFurniture, newOpening, newRoof, newRoom, newSlab, newStair, newWall } from '../../building/factories';
-import { openingDef, fitOpening, wallLength } from '../../building/openings';
+import { newBeam, newColumn, newFloorZone, newFurniture, newOpening, newRoof, newRoom, newSlab, newStair, newWall, presetOpening, richFloor } from '../../building/factories';
+import { openingDef, openingPreset, fitOpening, wallLength } from '../../building/openings';
+import { placeItem } from '../../building/place';
 import { nextBSectionLabel } from '../../building/section';
 import { furn } from '../../building/furniture';
 import { useBldUi } from './bldUi';
@@ -26,7 +27,7 @@ import { MField } from '../site/fields';
 type BProject = Extract<Project, { type: 'building' }>;
 export type SetB = (fn: (d: BuildingData) => BuildingData, record?: boolean) => void;
 
-const POLY_TOOLS = new Set(['roomPoly', 'slab', 'roof', 'lot']);
+const POLY_TOOLS = new Set(['roomPoly', 'slab', 'roof', 'lot', 'floorZone']);
 
 /** Hint for the active tool, shown above the drawing. */
 export function toolHint(t: ReturnType<typeof useBldUi.getState>['tool'], drafting: boolean): string {
@@ -34,9 +35,9 @@ export function toolHint(t: ReturnType<typeof useBldUi.getState>['tool'], drafti
     case 'select': return 'לחיצה: בחירה · Shift+לחיצה: הוספה לבחירה · גרירה: הזזה · גרירת קצה של קיר נבחר: שינוי אורך · גרירה ברקע: הזזת התצוגה';
     case 'wall': return drafting ? 'לחצי על הנקודה הבאה, או הקלידי אורך בחלונית ולחצי Enter. לחיצה על נקודת ההתחלה סוגרת. Esc או Enter מסיימים.' : 'לחצי על נקודת ההתחלה של הקיר. הקירות נצמדים לקצוות, לקירות ולרשת; זוויות של 45° נשמרות.';
     case 'room': return 'לחצי בתוך שטח סגור בקירות: החדר נוצר עם שטח והיקף מחושבים.';
-    case 'roomPoly': case 'slab': case 'roof': case 'lot': return drafting ? 'לחצי על הנקודות הבאות. Enter או לחיצה על הנקודה הראשונה סוגרים.' : 'לחצי על הפינה הראשונה של הצורה.';
+    case 'roomPoly': case 'slab': case 'roof': case 'lot': case 'floorZone': return drafting ? 'לחצי על הנקודות הבאות. Enter או לחיצה על הנקודה הראשונה סוגרים.' : 'לחצי על הפינה הראשונה של הצורה.';
     case 'opening': return 'רחפי מעל קיר ולחצי כדי למקם את הפתח (הדלת נפתחת לצד שבו לחצת). הכלי נשאר פעיל; Esc לסיום, ואז לחיצה על הפתח לעריכת מידותיו.';
-    case 'furniture': return 'לחצי במקום שבו יוצב הפריט. R מסובב ב-90° לפני ההצבה. הכלי נשאר פעיל; Esc לסיום.';
+    case 'furniture': return 'לחצי במקום שבו יוצב הפריט. פריטי קיר נצמדים לקיר הקרוב, אביזרים מונחים על השולחן או המדף שמתחתם. R מסובב ב-90°. Esc לסיום.';
     case 'stair': return 'לחצי על אמצע המדרגה הראשונה. כיוון העלייה נקבע בחלונית (אפשר לסובב אחר כך).';
     case 'column': return 'לחצי על מיקום העמוד.';
     case 'beam': case 'dim': case 'measure': case 'section': case 'calibrate': return drafting ? 'לחצי על הנקודה השנייה.' : t.t === 'calibrate' ? 'לחצי על שתי נקודות בתוכנית שהמרחק ביניהן ידוע (למשל קו מידה).' : 'לחצי על הנקודה הראשונה.';
@@ -90,6 +91,7 @@ export function PlanEditor({ project, model, setData, levelId }: { project: BPro
     else if (tool.t === 'slab') add1((dd) => ({ ...dd, slabs: [...dd.slabs, newSlab(id, levelId, tool.kind, pts, level, phase)] }));
     else if (tool.t === 'roof') add1((dd) => ({ ...dd, roofs: [...dd.roofs, newRoof(id, levelId, pts, level, phase)] }));
     else if (tool.t === 'lot') add1((dd) => ({ ...dd, lot: pts }));
+    else if (tool.t === 'floorZone') add1((dd) => ({ ...dd, floorZones: [...(dd.floorZones ?? []), newFloorZone(id, levelId, pts, richFloor('tile-hex'), `אזור רצפה ${(dd.floorZones ?? []).filter((z) => z.levelId === levelId).length + 1}`)] }));
     setDraft([]);
     if (tool.t !== 'lot') useBldUi.setState({ tool: { t: 'select' }, sel: [id] });
     else useBldUi.setState({ tool: { t: 'select' } });
@@ -196,7 +198,9 @@ export function PlanEditor({ project, model, setData, levelId }: { project: BPro
           if (!nw) { toast('יש ללחוץ על קיר.'); return true; }
           const def = openingDef(tool.kind);
           const id = uid();
-          const base = newOpening(id, nw.wall.id, tool.kind, 0, { width: ui.presets.openW ?? def.w, height: ui.presets.openH ?? def.h, sill: ui.presets.openSill ?? def.sill, phase });
+          const pr = openingPreset(tool.preset);
+          const base0 = pr ? presetOpening(id, nw.wall.id, pr, 0, { phase }) : newOpening(id, nw.wall.id, tool.kind, 0, { phase });
+          const base = { ...base0, width: ui.presets.openW ?? pr?.w ?? def.w, height: ui.presets.openH ?? pr?.h ?? def.h, sill: def.door ? 0 : ui.presets.openSill ?? pr?.sill ?? def.sill };
           const wh = nw.wall.height ?? level.ceilingHeight;
           if (base.sill + base.height > wh) { toast(`הפתח גבוה מהקיר (${fmtM(wh)}).`); return true; }
           const r = placeOpening(d, nw.wall, base, nw.s);
@@ -209,7 +213,10 @@ export function PlanEditor({ project, model, setData, levelId }: { project: BPro
         }
         case 'furniture': {
           const id = uid();
-          add1((dd) => ({ ...dd, furniture: [...dd.furniture, newFurniture(id, levelId, tool.kind, p, ui.presets.furnRot, phase)] }));
+          const pl = placeItem(d, model, level, tool.kind, p, ui.presets.furnRot);
+          if (pl.note) toast(pl.note);
+          else if (pl.on) { const u = d.furniture.find((x) => x.id === pl.on); if (u) toast(`הפריט הונח על "${furn(u.kind).label}" בגובה ${(pl.elev / 1000).toFixed(2)} מ׳.`); }
+          add1((dd) => ({ ...dd, furniture: [...dd.furniture, newFurniture(id, levelId, tool.kind, pl.p, pl.rot, phase, { elev: pl.elev })] }));
           return true;
         }
         case 'stair': {
@@ -318,14 +325,15 @@ export function PlanEditor({ project, model, setData, levelId }: { project: BPro
       const nw = nearestWall(d, levelId, hp, (tolPx * 2) / ctx.k);
       if (nw) {
         const def = openingDef(tool.kind);
-        const w = ui.presets.openW ?? def.w;
+        const w = ui.presets.openW ?? openingPreset(tool.preset)?.w ?? def.w;
         const pos = fitOpening(nw.wall, d.openings, w, nw.s, undefined, phase);
         const u = norm(sub(nw.wall.b, nw.wall.a));
         if (pos !== null) { const a = ctx.T(add(nw.wall.a, mul(u, pos - w / 2))), b = ctx.T(add(nw.wall.a, mul(u, pos + w / 2))); nodes.push(<line key="opv" x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={SEL} strokeWidth={Math.max(4, nw.wall.thickness * ctx.k)} strokeOpacity={0.6} />); }
       }
     }
     if (hp && tool.t === 'furniture') {
-      const f = newFurniture('pv', levelId, tool.kind, hp, ui.presets.furnRot);
+      const pl = placeItem(d, model, level, tool.kind, hp, ui.presets.furnRot);
+      const f = newFurniture('pv', levelId, tool.kind, pl.p, pl.rot, 'new', { elev: pl.elev });
       nodes.push(<g key="fpv" opacity={0.6}>{furnitureSymbol(f, ctx, { color: SEL })}</g>);
     }
     if (hp && hover?.kind) {

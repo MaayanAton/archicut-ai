@@ -284,4 +284,19 @@ describe('lock, hide, layers and compatibility', () => {
     expect(plain.floorZones).toBeUndefined();
     expect(plain.walls[0].left).toEqual({ material: 'paint', color: '#ffffff' });
   });
+  it('repairs bad colours and sizes from a broken file instead of passing them to the drawing', () => {
+    const d = house();
+    d.rooms[0] = { ...d.rooms[0], floor: { material: 'no-such', color: 'not a colour', tileW: -5, tileH: 0, angle: 0, v: 4, grout: 'x' } };
+    d.furniture = [{ ...newFurniture('f', 'L0', 'vase', v2(1000, 1000), 0, 'new'), color: 'red-ish', color3: 'zz', light: { on: true, dim: 1, temp: 'blue' } }];
+    const { data } = migrateBuilding(JSON.parse(JSON.stringify(d)), id);
+    const f = data.rooms[0].floor;
+    expect(/^#[0-9a-f]{6}$/i.test(f.color)).toBe(true);
+    expect(f.tileW).toBeUndefined();
+    expect(f.tileH).toBeUndefined();
+    expect(f.grout).toBeUndefined();
+    expect(resolveFinish(f).def.id).toBe(mat('no-such').id);
+    expect(data.furniture[0].color).toBe('#999999');
+    expect(data.furniture[0].color3).toBeUndefined();
+    expect(data.furniture[0].light?.temp).toBe('warm');
+  });
 });

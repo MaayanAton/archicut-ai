@@ -12,7 +12,8 @@ import { Icons } from '../icons';
 import type { BuildingModel } from '../../building/model';
 import { levelOf, sortedLevels } from '../../building/model';
 import { findEl, translateIds } from '../../building/edit';
-import { groundMesh, presetDir, setupLights, solidGroup, solidsBounds, visibleSolids, type ViewPreset } from '../../building/three';
+import { clearGroupCache, groundMesh, presetDir, setupLights, solidGroup, solidsBounds, visibleSolids, type ViewPreset } from '../../building/three';
+import { onTextureLoaded, setCustomImages, setTextureQuality } from '../../materials/three';
 import type { BuildingData } from '../../building/types';
 import { EL_LABELS } from '../../building/edit';
 import { useBldUi } from './bldUi';
@@ -30,6 +31,8 @@ interface St {
   content: THREE.Group;
   ground: THREE.Mesh | null;
   lights: THREE.Object3D[];
+  /** 4.0: lights of the light fittings (night mode). */
+  lamps: THREE.Object3D[];
   selBox: THREE.Box3Helper | null;
   render: () => void;
   bounds: { c: THREE.Vector3; R: number };
@@ -65,6 +68,9 @@ export function Building3D({ project, model, setData, levelId, compact = false }
   const [ceilings, setCeilings] = useState(false);
   const [furniture, setFurniture] = useState(true);
   const [cut, setCut] = useState(false);
+  const [night, setNight] = useState(false);
+  const [quality, setQuality] = useState<'basic' | 'high'>(() => { try { return localStorage.getItem('archicut-3d-quality') === 'basic' ? 'basic' : 'high'; } catch { return 'high'; } });
+  const [qKey, setQKey] = useState(0);
   const sel = useBldUi((s) => s.sel);
   const dataRef = useRef(d);
   dataRef.current = d;
@@ -101,7 +107,7 @@ export function Building3D({ project, model, setData, levelId, compact = false }
     ortho.up.set(0, 0, 1);
     const content = new THREE.Group();
     scene.add(content);
-    const s: St = { renderer, scene, persp, ortho, camera: persp, controls: null as unknown as OrbitControls, content, ground: null, lights: [], selBox: null, render: () => {}, bounds: { c: new THREE.Vector3(), R: 10000 } };
+    const s: St = { renderer, scene, persp, ortho, camera: persp, controls: null as unknown as OrbitControls, content, ground: null, lights: [], lamps: [], selBox: null, render: () => {}, bounds: { c: new THREE.Vector3(), R: 10000 } };
     let frame = 0;
     s.render = () => { if (frame) return; frame = requestAnimationFrame(() => { frame = 0; renderer.render(scene, s.camera); }); };
     st.current = s;
@@ -236,9 +242,19 @@ export function Building3D({ project, model, setData, levelId, compact = false }
     };
   }, [project.id, setData]);
 
+  // ---------- 4.0: custom images, texture quality ----------
+  useEffect(() => { setCustomImages(d.images); }, [d.images]);
+  useEffect(() => onTextureLoaded(() => st.current?.render()), []);
+  useEffect(() => {
+    setTextureQuality(quality);
+    try { localStorage.setItem('archicut-3d-quality', quality); } catch { /* private mode */ }
+    const s = st.current;
+    if (s) s.renderer.setPixelRatio(quality === 'high' ? Math.min(window.devicePixelRatio, 2) : 1);
+  }, [quality]);
+
   // ---------- content ----------
   const fitted = useRef(false);
-  const optsKey = `${[...(opts.levels ?? [])].join(',')}|${opts.roofs}|${opts.ceilings}|${opts.furniture}|${opts.cutZ}`;
+  const optsKey = `${[...(opts.levels ?? [])].join(',')}|${opts.roofs}|${opts.ceilings}|${opts.furniture}|${opts.cutZ}|${qKey}`;
   useEffect(() => {
     const s = st.current;
     if (!s) return;
@@ -273,12 +289,48 @@ export function Building3D({ project, model, setData, levelId, compact = false }
     if (!s) return;
     for (const l of s.lights) s.scene.remove(l);
     const before = s.scene.children.length;
-    setupLights(s.scene, s.bounds.c, s.bounds.R, sun, shadows);
+    setupLights(s.scene, s.bounds.c, s.bounds.R, sun, shadows && !night);
     s.lights = s.scene.children.slice(before);
-    s.renderer.shadowMap.enabled = shadows;
+    s.renderer.shadowMap.enabled = shadows && !night;
     s.scene.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) m.needsUpdate = true; });
     s.render();
-  }, [sun, shadows]);
+  }, [sun, shadows, night]);
+
+  // 4.0: night mode: the daylight is dimmed and the light fittings that are on light the scene (at most 12 lights,
+  // the active level first, so the view stays fast). Decorative fittings only glow.
+  const lampKey = night ? model.lights.map((l) => `${l.id}|${l.x}|${l.y}|${l.z}|${l.color}|${l.power}|${l.type}|${l.decorative}`).join(';') : '';
+  useEffect(() => {
+    const s = st.current;
+    if (!s) return;
+    for (const l of s.lamps) s.scene.remove(l);
+    s.lamps = [];
+    for (const l of s.lights) {
+      const L = l as THREE.Light;
+      if ((L as THREE.HemisphereLight).isHemisphereLight) L.intensity = night ? 0.16 : 1.25;
+      else if ((L as THREE.DirectionalLight).isDirectionalLight) L.intensity = night ? 0.06 : 2.0;
+    }
+    s.renderer.setClearColor(night ? 0x1c2330 : 0xeef1f4);
+    if (night) {
+      const list = model.lights.filter((l) => !l.decorative).sort((a, b) => Number(b.levelId === levelId) - Number(a.levelId === levelId) || b.power - a.power).slice(0, 12);
+      for (const l of list) {
+        const col = new THREE.Color(l.color);
+        if (l.type === 'spot') {
+          const sp = new THREE.SpotLight(col, 3.2 * l.power, 6000, Math.PI / 3.2, 0.6, 0);
+          sp.position.set(l.x, l.y, l.z);
+          sp.target.position.set(l.x, l.y, l.z - 1000);
+          s.scene.add(sp, sp.target);
+          s.lamps.push(sp, sp.target);
+        } else {
+          const pl = new THREE.PointLight(col, (l.type === 'strip' ? 1.6 : 2.4) * l.power, l.type === 'strip' ? 3200 : 5200, 0);
+          pl.position.set(l.x, l.y, l.z);
+          s.scene.add(pl);
+          s.lamps.push(pl);
+        }
+      }
+    }
+    s.scene.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) m.needsUpdate = true; });
+    s.render();
+  }, [lampKey, night, levelId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Selection box.
   useEffect(() => {
@@ -368,6 +420,11 @@ export function Building3D({ project, model, setData, levelId, compact = false }
           <Check checked={cut} onChange={setCut}>חתך אופקי (1.20 מ׳)</Check>
           <button className={`btn sm ${walk ? 'active' : ''}`} aria-pressed={walk} onClick={startWalk}>{Icons.walk} סיור בגובה העיניים</button>
           <Check checked={shadows} onChange={setShadows}>צללים</Check>
+          <Check checked={night} onChange={setNight}>מצב לילה (תאורה)</Check>
+          <select className="input level-pick" value={quality} onChange={(e) => { setQuality(e.target.value as 'basic' | 'high'); clearGroupCache(); setQKey((k) => k + 1); }} aria-label="איכות תלת־ממד">
+            <option value="high">איכות גבוהה</option>
+            <option value="basic">איכות בסיסית (מהיר)</option>
+          </select>
           <label className="sun"><span className="small">כיוון שמש</span><input type="range" min={0} max={359} value={sun.az} aria-label="כיוון השמש" onChange={(e) => setSun({ ...sun, az: Number(e.target.value) })} /></label>
           <label className="sun"><span className="small">גובה שמש</span><input type="range" min={5} max={89} value={sun.alt} aria-label="גובה השמש" onChange={(e) => setSun({ ...sun, alt: Number(e.target.value) })} /></label>
         </div>
